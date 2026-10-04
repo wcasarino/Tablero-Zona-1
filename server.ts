@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { MongoClient, Db } from 'mongodb';
 import fs from 'fs';
 import os from 'os';
 import { initialData } from './src/data';
@@ -11,13 +10,21 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
-// For local fallback store (when MongoDB is not reachable inside sandboxed preview)
-const FALLBACK_FILE = path.join(process.cwd(), 'local_db.json');
+const STORE_FILE = path.join(process.cwd(), 'local_db.json');
 
-function readFallbackDB() {
+interface AppStore {
+  sheetUrl?: string;
+  turnos: any[];
+  profesionales: any[];
+  guardias: any[];
+  agendas: any[];
+  fecha_agenda: any[];
+}
+
+function readStore(): AppStore {
   try {
-    if (fs.existsSync(FALLBACK_FILE)) {
-      const content = fs.readFileSync(FALLBACK_FILE, 'utf-8');
+    if (fs.existsSync(STORE_FILE)) {
+      const content = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(content);
       if (!parsed.turnos) parsed.turnos = [];
       if (!parsed.profesionales) parsed.profesionales = [];
@@ -27,512 +34,301 @@ function readFallbackDB() {
       return parsed;
     }
   } catch (err) {
-    console.error('Error reading fallback DB:', err);
+    console.error('Error reading store file:', err);
   }
-  return { turnos: initialData, profesionales: [], guardias: [], agendas: [], fecha_agenda: [] };
+  return { 
+    sheetUrl: process.env.GOOGLE_SHEET_URL || '',
+    turnos: initialData, 
+    profesionales: [], 
+    guardias: [], 
+    agendas: [], 
+    fecha_agenda: [] 
+  };
 }
 
-function writeFallbackDB(data: any) {
+function writeStore(data: Partial<AppStore>) {
   try {
-    fs.writeFileSync(FALLBACK_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    const current = readStore();
+    const updated = { ...current, ...data };
+    fs.writeFileSync(STORE_FILE, JSON.stringify(updated, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Error writing fallback DB:', err);
+    console.error('Error writing store file:', err);
   }
 }
 
-// Ensure database setup & lazy MongoDB connection
-let mongoClient: MongoClient | null = null;
-let db: Db | null = null;
-let isDbConnected = false;
-let dbConnectionError: string | null = null;
-
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/atenciones_zona_1';
-
-async function connectToMongo() {
-  if (isDbConnected && db) return { db, connected: true };
-  try {
-    console.log(`Connecting to MongoDB at: ${MONGODB_URI}...`);
-    mongoClient = new MongoClient(MONGODB_URI, {
-      serverSelectionTimeoutMS: 2000, // short timeout so it doesn't freeze or lag if local PC is offline
-    });
-    await mongoClient.connect();
-    db = mongoClient.db();
-    isDbConnected = true;
-    dbConnectionError = null;
-    console.log('Successfully connected to MongoDB!');
-    return { db, connected: true };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    isDbConnected = false;
-    dbConnectionError = errMsg;
-    console.warn(`Could not connect to MongoDB: ${errMsg}. Running in Fallback mode with local_db.json.`);
-    return { db: null, connected: false };
-  }
-}
-
-// Initial connection attempt
-connectToMongo();
-
-// API: Check MongoDB Connection Status
-app.get('/api/test-connection', async (req, res) => {
-  const { connected } = await connectToMongo();
+// API: Health / Connection Status
+app.get('/api/test-connection', (req, res) => {
+  const store = readStore();
   res.json({
-    connected,
-    mode: connected ? 'MongoDB' : 'Fallback (local_db.json)',
-    uri: MONGODB_URI,
-    error: dbConnectionError,
+    connected: true,
+    mode: 'Google Sheets / Sincronizado',
+    hasSheetUrl: Boolean(store.sheetUrl || process.env.GOOGLE_SHEET_URL),
+    sheetUrl: store.sheetUrl || process.env.GOOGLE_SHEET_URL || '',
   });
 });
 
-// API: Fetch turnos
-app.get('/api/turnos', async (req, res) => {
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const turnos = await db.collection('turnos').find({}).toArray();
-      const formatted = turnos.map((t) => {
-        const { _id, ...rest } = t;
-        return { id: t.id || String(_id), ...rest };
+// API: Google Sheets URL config
+app.get('/api/sheets/config', (req, res) => {
+  const store = readStore();
+  res.json({
+    sheetUrl: store.sheetUrl || process.env.GOOGLE_SHEET_URL || '',
+  });
+});
+
+app.post('/api/sheets/config', (req, res) => {
+  const { sheetUrl } = req.body;
+  writeStore({ sheetUrl: String(sheetUrl || '').trim() });
+  res.json({ success: true, sheetUrl: String(sheetUrl || '').trim() });
+});
+
+// API: Fetch Google Sheet binary XLSX through backend proxy (bypassing CORS)
+app.post('/api/sheets/fetch', async (req, res) => {
+  try {
+    const store = readStore();
+    const rawUrl = (req.body && req.body.url) ? req.body.url : (store.sheetUrl || process.env.GOOGLE_SHEET_URL);
+
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      return res.status(400).json({ 
+        error: 'No se ha proporcionado ni configurado la URL de la planilla de Google Sheets.' 
       });
-      res.json(formatted);
-    } catch (error) {
-      console.error('Error getting turnos from MongoDB:', error);
-      res.status(500).json({ error: 'Database read error' });
     }
-  } else {
-    const { turnos } = readFallbackDB();
-    res.json(turnos);
+
+    let exportUrl = rawUrl.trim();
+    const match = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      exportUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
+    }
+
+    console.log(`[Google Sheets] Descargando desde: ${exportUrl}`);
+    const fetchResponse = await fetch(exportUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      },
+      redirect: 'follow',
+    });
+
+    if (!fetchResponse.ok) {
+      return res.status(fetchResponse.status).json({
+        error: `Error al descargar Google Sheet (${fetchResponse.status}: ${fetchResponse.statusText}). Verifique que la planilla esté configurada como "Cualquier persona con el vínculo puede ver".`
+      });
+    }
+
+    const contentType = fetchResponse.headers.get('content-type') || '';
+    const arrayBuffer = await fetchResponse.arrayBuffer();
+
+    // Check if Google returned an HTML login page instead of an XLSX file
+    if (contentType.includes('text/html') || arrayBuffer.byteLength < 500) {
+      const preview = Buffer.from(arrayBuffer).toString('utf-8', 0, 500);
+      if (preview.includes('<html') || preview.includes('<!DOCTYPE') || preview.includes('ServiceLogin')) {
+        return res.status(403).json({
+          error: 'Acceso denegado a Google Sheets: La planilla no tiene permisos públicos de lectura. En Google Sheets, haga clic en "Compartir" -> en "Acceso general" elija "Cualquier persona que tenga el vínculo" -> Rol "Lector".'
+        });
+      }
+    }
+
+    // Persist sheetUrl in store if provided
+    if (req.body && req.body.url) {
+      writeStore({ sheetUrl: rawUrl.trim() });
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="DATOS.xlsx"');
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err: any) {
+    console.error('Error fetching Google Sheet:', err);
+    res.status(500).json({ error: err.message || 'Error al conectar con Google Sheets' });
   }
+});
+
+// API: Fetch turnos
+app.get('/api/turnos', (req, res) => {
+  const { turnos } = readStore();
+  res.json(turnos || []);
 });
 
 // API: Save turnos (bulk write upserts)
-app.post('/api/turnos/bulk', async (req, res) => {
+app.post('/api/turnos/bulk', (req, res) => {
   const { turnos: newTurnos } = req.body;
   if (!Array.isArray(newTurnos)) {
     return res.status(400).json({ error: 'Missing turnos array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const collection = db.collection('turnos');
-      const bulkOps = newTurnos.map((t) => ({
-        updateOne: {
-          filter: { id: t.id },
-          update: { $set: t },
-          upsert: true,
-        },
-      }));
-      if (bulkOps.length > 0) {
-        await collection.bulkWrite(bulkOps);
-      }
-      res.json({ success: true, count: newTurnos.length });
-    } catch (error) {
-      console.error('Error saving turnos bulk to MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
+  const store = readStore();
+  newTurnos.forEach((t) => {
+    const idx = store.turnos.findIndex((existing: any) => existing.id === t.id);
+    if (idx >= 0) {
+      store.turnos[idx] = t;
+    } else {
+      store.turnos.push(t);
     }
-  } else {
-    const store = readFallbackDB();
-    newTurnos.forEach((t) => {
-      const idx = store.turnos.findIndex((existing: any) => existing.id === t.id);
-      if (idx >= 0) {
-        store.turnos[idx] = t;
-      } else {
-        store.turnos.push(t);
-      }
-    });
-    writeFallbackDB(store);
-    res.json({ success: true, count: newTurnos.length, fallback: true });
-  }
+  });
+  writeStore({ turnos: store.turnos });
+  res.json({ success: true, count: newTurnos.length });
 });
 
 // API: Replace turnos (delete all and insert new)
-app.post('/api/turnos/replace', async (req, res) => {
+app.post('/api/turnos/replace', (req, res) => {
   const { turnos: newTurnos } = req.body;
   if (!Array.isArray(newTurnos)) {
     return res.status(400).json({ error: 'Missing turnos array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('turnos').deleteMany({});
-      if (newTurnos.length > 0) {
-        const dataToInsert = newTurnos.map((t: any) => ({ ...t, _id: t.id || t._id }));
-        dataToInsert.forEach((d: any) => { if (!d._id) delete d._id; if (!d.id) delete d.id; });
-        await db.collection('turnos').insertMany(dataToInsert);
-      }
-      res.json({ success: true, count: newTurnos.length });
-    } catch (error) {
-      console.error('Error replacing turnos in MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.turnos = newTurnos;
-    writeFallbackDB(store);
-    res.json({ success: true, count: newTurnos.length, fallback: true });
-  }
+  writeStore({ turnos: newTurnos });
+  res.json({ success: true, count: newTurnos.length });
 });
 
 // API: Clear/Delete specific turnos
-app.post('/api/turnos/clear', async (req, res) => {
+app.post('/api/turnos/clear', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids)) {
     return res.status(400).json({ error: 'Missing ids' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('turnos').deleteMany({ id: { $in: ids } });
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error clearing turnos from MongoDB:', error);
-      res.status(500).json({ error: 'Database delete error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.turnos = store.turnos.filter((t: any) => !ids.includes(t.id));
-    writeFallbackDB(store);
-    res.json({ success: true, fallback: true });
-  }
+  const store = readStore();
+  const updated = store.turnos.filter((t: any) => !ids.includes(t.id));
+  writeStore({ turnos: updated });
+  res.json({ success: true });
 });
 
 // API: Fetch guardias
-app.get('/api/guardias', async (req, res) => {
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const guardias = await db.collection('guardias').find({}).toArray();
-      const formatted = guardias.map((g) => {
-        const { _id, ...rest } = g;
-        return { id: g.id || String(_id), ...rest };
-      });
-      res.json(formatted);
-    } catch (error) {
-      console.error('Error getting guardias from MongoDB:', error);
-      res.status(500).json({ error: 'Database read error' });
-    }
-  } else {
-    const { guardias } = readFallbackDB();
-    res.json(guardias || []);
-  }
+app.get('/api/guardias', (req, res) => {
+  const { guardias } = readStore();
+  res.json(guardias || []);
 });
 
 // API: Save guardias (bulk write upserts)
-app.post('/api/guardias/bulk', async (req, res) => {
+app.post('/api/guardias/bulk', (req, res) => {
   const { guardias: newGuardias } = req.body;
   if (!Array.isArray(newGuardias)) {
     return res.status(400).json({ error: 'Missing guardias array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const collection = db.collection('guardias');
-      const bulkOps = newGuardias.map((g) => ({
-        updateOne: {
-          filter: { id: g.id },
-          update: { $set: g },
-          upsert: true,
-        },
-      }));
-      if (bulkOps.length > 0) {
-        await collection.bulkWrite(bulkOps);
-      }
-      res.json({ success: true, count: newGuardias.length });
-    } catch (error) {
-      console.error('Error saving guardias bulk to MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
+  const store = readStore();
+  if (!store.guardias) store.guardias = [];
+  newGuardias.forEach((g) => {
+    const idx = store.guardias.findIndex((existing: any) => existing.id === g.id);
+    if (idx >= 0) {
+      store.guardias[idx] = g;
+    } else {
+      store.guardias.push(g);
     }
-  } else {
-    const store = readFallbackDB();
-    if (!store.guardias) store.guardias = [];
-    newGuardias.forEach((g) => {
-      const idx = store.guardias.findIndex((existing: any) => existing.id === g.id);
-      if (idx >= 0) {
-        store.guardias[idx] = g;
-      } else {
-        store.guardias.push(g);
-      }
-    });
-    writeFallbackDB(store);
-    res.json({ success: true, count: newGuardias.length, fallback: true });
-  }
+  });
+  writeStore({ guardias: store.guardias });
+  res.json({ success: true, count: newGuardias.length });
 });
 
 // API: Replace guardias (delete all and insert new)
-app.post('/api/guardias/replace', async (req, res) => {
+app.post('/api/guardias/replace', (req, res) => {
   const { guardias: newGuardias } = req.body;
   if (!Array.isArray(newGuardias)) {
     return res.status(400).json({ error: 'Missing guardias array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('guardias').deleteMany({});
-      if (newGuardias.length > 0) {
-        const dataToInsert = newGuardias.map((g: any) => ({ ...g, _id: g.id || g._id }));
-        dataToInsert.forEach((d: any) => { if (!d._id) delete d._id; if (!d.id) delete d.id; });
-        await db.collection('guardias').insertMany(dataToInsert);
-      }
-      res.json({ success: true, count: newGuardias.length });
-    } catch (error) {
-      console.error('Error replacing guardias in MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.guardias = newGuardias;
-    writeFallbackDB(store);
-    res.json({ success: true, count: newGuardias.length, fallback: true });
-  }
+  writeStore({ guardias: newGuardias });
+  res.json({ success: true, count: newGuardias.length });
 });
 
 // API: Clear/Delete specific guardias
-app.post('/api/guardias/clear', async (req, res) => {
+app.post('/api/guardias/clear', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids)) {
     return res.status(400).json({ error: 'Missing ids' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('guardias').deleteMany({ id: { $in: ids } });
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error clearing guardias from MongoDB:', error);
-      res.status(500).json({ error: 'Database delete error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    if (!store.guardias) store.guardias = [];
-    store.guardias = store.guardias.filter((g: any) => !ids.includes(g.id));
-    writeFallbackDB(store);
-    res.json({ success: true, fallback: true });
-  }
+  const store = readStore();
+  const updated = (store.guardias || []).filter((g: any) => !ids.includes(g.id));
+  writeStore({ guardias: updated });
+  res.json({ success: true });
 });
 
 // API: Fetch profesionales
-app.get('/api/profesionales', async (req, res) => {
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const profs = await db.collection('profesionales').find({}).toArray();
-      const formatted = profs.map((p) => {
-        const { _id, ...rest } = p;
-        return { id: p.id || String(_id), ...rest };
-      });
-      res.json(formatted);
-    } catch (error) {
-      console.error('Error getting profesionales from MongoDB:', error);
-      res.status(500).json({ error: 'Database read error' });
-    }
-  } else {
-    const { profesionales } = readFallbackDB();
-    res.json(profesionales);
-  }
+app.get('/api/profesionales', (req, res) => {
+  const { profesionales } = readStore();
+  res.json(profesionales || []);
 });
 
 // API: Save profesionales (bulk write upserts)
-app.post('/api/profesionales/bulk', async (req, res) => {
+app.post('/api/profesionales/bulk', (req, res) => {
   const { profesionales: newProfs } = req.body;
   if (!Array.isArray(newProfs)) {
     return res.status(400).json({ error: 'Missing profesionales array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const collection = db.collection('profesionales');
-      const bulkOps = newProfs.map((p) => ({
-        updateOne: {
-          filter: { id: p.id },
-          update: { $set: p },
-          upsert: true,
-        },
-      }));
-      if (bulkOps.length > 0) {
-        await collection.bulkWrite(bulkOps);
-      }
-      res.json({ success: true, count: newProfs.length });
-    } catch (error) {
-      console.error('Error saving profesionales bulk to MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
+  const store = readStore();
+  if (!store.profesionales) store.profesionales = [];
+  newProfs.forEach((p) => {
+    const idx = store.profesionales.findIndex((existing: any) => existing.id === p.id);
+    if (idx >= 0) {
+      store.profesionales[idx] = p;
+    } else {
+      store.profesionales.push(p);
     }
-  } else {
-    const store = readFallbackDB();
-    newProfs.forEach((p) => {
-      const idx = store.profesionales.findIndex((existing: any) => existing.id === p.id);
-      if (idx >= 0) {
-        store.profesionales[idx] = p;
-      } else {
-        store.profesionales.push(p);
-      }
-    });
-    writeFallbackDB(store);
-    res.json({ success: true, count: newProfs.length, fallback: true });
-  }
+  });
+  writeStore({ profesionales: store.profesionales });
+  res.json({ success: true, count: newProfs.length });
 });
 
 // API: Replace profesionales (delete all and insert new)
-app.post('/api/profesionales/replace', async (req, res) => {
+app.post('/api/profesionales/replace', (req, res) => {
   const { profesionales: newProfs } = req.body;
   if (!Array.isArray(newProfs)) {
     return res.status(400).json({ error: 'Missing profesionales array' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('profesionales').deleteMany({});
-      if (newProfs.length > 0) {
-        const dataToInsert = newProfs.map((p: any) => ({ ...p, _id: p.id || p._id }));
-        dataToInsert.forEach((d: any) => { if (!d._id) delete d._id; if (!d.id) delete d.id; });
-        await db.collection('profesionales').insertMany(dataToInsert);
-      }
-      res.json({ success: true, count: newProfs.length });
-    } catch (error) {
-      console.error('Error replacing profesionales in MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.profesionales = newProfs;
-    writeFallbackDB(store);
-    res.json({ success: true, count: newProfs.length, fallback: true });
-  }
+  writeStore({ profesionales: newProfs });
+  res.json({ success: true, count: newProfs.length });
 });
 
 // API: Clear/Delete specific profesionales
-app.post('/api/profesionales/clear', async (req, res) => {
+app.post('/api/profesionales/clear', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids)) {
     return res.status(400).json({ error: 'Missing ids' });
   }
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('profesionales').deleteMany({ id: { $in: ids } });
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error clearing profesionales from MongoDB:', error);
-      res.status(500).json({ error: 'Database delete error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.profesionales = store.profesionales.filter((p: any) => !ids.includes(p.id));
-    writeFallbackDB(store);
-    res.json({ success: true, fallback: true });
-  }
+  const store = readStore();
+  const updated = (store.profesionales || []).filter((p: any) => !ids.includes(p.id));
+  writeStore({ profesionales: updated });
+  res.json({ success: true });
 });
 
 // API: Fetch agendas
-app.get('/api/agendas', async (req, res) => {
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const data = await db.collection('agendas').find({}).toArray();
-      const formatted = data.map((d) => {
-        const { _id, ...rest } = d;
-        return { id: d.id || String(_id), ...rest };
-      });
-      res.json(formatted);
-    } catch (error) {
-      console.error('Error getting agendas from MongoDB:', error);
-      res.status(500).json({ error: 'Database read error' });
-    }
-  } else {
-    const { agendas } = readFallbackDB();
-    res.json(agendas || []);
-  }
+app.get('/api/agendas', (req, res) => {
+  const { agendas } = readStore();
+  res.json(agendas || []);
 });
 
 // API: Replace agendas (delete all and insert new)
-app.post('/api/agendas/replace', async (req, res) => {
+app.post('/api/agendas/replace', (req, res) => {
   const { data } = req.body;
   if (!Array.isArray(data)) return res.status(400).json({ error: 'Missing data array' });
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('agendas').deleteMany({});
-      if (data.length > 0) {
-        const dataToInsert = data.map(d => ({ ...d, _id: d.id || d._id }));
-        dataToInsert.forEach(d => { if (!d._id) delete d._id; if (!d.id) delete d.id; });
-        await db.collection('agendas').insertMany(dataToInsert);
-      }
-      res.json({ success: true, count: data.length });
-    } catch (error) {
-      console.error('Error replacing agendas in MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.agendas = data;
-    writeFallbackDB(store);
-    res.json({ success: true, count: data.length, fallback: true });
-  }
+  writeStore({ agendas: data });
+  res.json({ success: true, count: data.length });
 });
 
 // API: Fetch fecha-agenda
-app.get('/api/fecha-agenda', async (req, res) => {
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      const doc = await db.collection('fecha_agenda').findOne({});
-      if (doc) {
-        const { _id, ...rest } = doc;
-        res.json({ id: doc.id || String(_id), ...rest });
-      } else {
-        res.json(null);
-      }
-    } catch (error) {
-      console.error('Error getting fecha_agenda from MongoDB:', error);
-      res.status(500).json({ error: 'Database read error' });
-    }
+app.get('/api/fecha-agenda', (req, res) => {
+  const { fecha_agenda } = readStore();
+  if (Array.isArray(fecha_agenda) && fecha_agenda.length > 0) {
+    res.json(fecha_agenda[0]);
+  } else if (fecha_agenda && !Array.isArray(fecha_agenda)) {
+    res.json(fecha_agenda);
   } else {
-    const { fecha_agenda } = readFallbackDB();
-    if (Array.isArray(fecha_agenda) && fecha_agenda.length > 0) {
-      res.json(fecha_agenda[0]);
-    } else if (fecha_agenda && !Array.isArray(fecha_agenda)) {
-      res.json(fecha_agenda);
-    } else {
-      res.json(null);
-    }
+    res.json(null);
   }
 });
 
 // API: Replace/Save single fecha-agenda
-app.post('/api/fecha-agenda/replace', async (req, res) => {
+app.post('/api/fecha-agenda/replace', (req, res) => {
   const { data } = req.body;
   if (!data) return res.status(400).json({ error: 'Missing data object' });
 
-  const { db, connected } = await connectToMongo();
-  if (connected && db) {
-    try {
-      await db.collection('fecha_agenda').deleteMany({});
-      const docToInsert = { ...data, _id: data.id || 'single' };
-      await db.collection('fecha_agenda').insertOne(docToInsert);
-      res.json({ success: true, data });
-    } catch (error) {
-      console.error('Error replacing fecha_agenda in MongoDB:', error);
-      res.status(500).json({ error: 'Database save error' });
-    }
-  } else {
-    const store = readFallbackDB();
-    store.fecha_agenda = [data];
-    writeFallbackDB(store);
-    res.json({ success: true, data, fallback: true });
-  }
+  writeStore({ fecha_agenda: [data] });
+  res.json({ success: true, data });
 });
 
-
-// Vite middleware & Static SPARouter configuration
+// Vite middleware & Static SPA configuration
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

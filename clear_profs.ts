@@ -1,4 +1,4 @@
-import { fetchProfesionales, clearAllProfesionales } from './src/firebase.js';
+import { fetchProfesionales, clearAllProfesionales } from './src/firebase';
 
 async function run() {
   console.log('Fetching profesionales...');

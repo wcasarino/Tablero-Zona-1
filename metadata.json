@@ -1,0 +1,8 @@
+{
+  "name": "TABLERO ZONA 1",
+  "description": "Dashboard sobre atenciones ambulatorias y de agendas de la Zona Sanitaria I Central",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /turnos/{turnoId} {
+      allow read: if true;
+      allow create: if isValidId(turnoId) && isValidTurno(request.resource.data);
+      allow update: if isValidId(turnoId) && isValidTurno(request.resource.data) && (request.resource.data.id == resource.data.id);
+      allow delete: if isValidId(turnoId);
+    }
+
+    match /profesionales/{profId} {
+      allow read: if true;
+      allow create: if isValidId(profId) && isValidProfesional(request.resource.data);
+      allow update: if isValidId(profId) && isValidProfesional(request.resource.data) && (request.resource.data.id == resource.data.id);
+      allow delete: if isValidId(profId);
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTurno(data) {
+      return data.keys().hasAll(['id', 'fecha', 'dpto', 'caps', 'especialidad', 'profesional', 'tipoTurno', 'dni', 'pacDpto', 'coberturaSocial', 'edad', 'sexo', 'turno', 'dniPro'])
+        && data.keys().size() == 14
+        && data.id is string && data.id.size() <= 128
+        && data.fecha is string && data.fecha.size() <= 10
+        && data.dpto is string && data.dpto.size() <= 200
+        && data.caps is string && data.caps.size() <= 200
+        && data.especialidad is string && data.especialidad.size() <= 200
+        && data.profesional is string && data.profesional.size() <= 200
+        && data.tipoTurno is string && (data.tipoTurno == 'Atención Inmediata' || data.tipoTurno == 'Programado' || data.tipoTurno == 'SobreTurno')
+        && data.dni is string && data.dni.size() <= 50
+        && data.pacDpto is string && data.pacDpto.size() <= 200
+        && data.coberturaSocial is string && data.coberturaSocial.size() <= 200
+        && data.edad is int && data.edad >= 0 && data.edad <= 150
+        && data.sexo is string && (data.sexo == 'M' || data.sexo == 'F')
+        && data.turno is string && data.turno.size() <= 100
+        && data.dniPro is string && data.dniPro.size() <= 100;
+    }
+
+    function isValidProfesional(data) {
+      return data.keys().hasAll(['id', 'dniPro', 'cargaH', 'turEsp'])
+        && data.keys().size() == 4
+        && data.id is string && data.id.size() <= 128
+        && data.dniPro is string && data.dniPro.size() <= 100
+        && data.cargaH is string && data.cargaH.size() <= 50
+        && data.turEsp is string && data.turEsp.size() <= 200;
+    }
+  }
+}

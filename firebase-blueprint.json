@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "Turno": {
+      "title": "Turno",
+      "description": "Un registro de turno médico/hospitalario.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único." },
+        "fecha": { "type": "string", "format": "date", "description": "Fecha del turno (YYYY-MM-DD)." },
+        "dpto": { "type": "string", "description": "Departamento del hospital o clínica." },
+        "caps": { "type": "string", "description": "Centro de Atención Primaria de la Salud." },
+        "especialidad": { "type": "string", "description": "Especialidad médica." },
+        "profesional": { "type": "string", "description": "Nombre del profesional de la salud." },
+        "tipoTurno": { "type": "string", "enum": ["Atención Inmediata", "Programado", "SobreTurno"] },
+        "dni": { "type": "string", "description": "DNI del paciente." },
+        "pacDpto": { "type": "string", "description": "Departamento de origen del paciente." },
+        "coberturaSocial": { "type": "string", "description": "Cobertura o seguro social del paciente." },
+        "edad": { "type": "integer", "description": "Edad del paciente." },
+        "sexo": { "type": "string", "enum": ["F", "M"] },
+        "turno": { "type": "string", "description": "Turno del día (ej. Mañana, Tarde)." },
+        "dniPro": { "type": "string", "description": "DNI-PRO del profesional correspondiente." }
+      },
+      "required": ["id", "fecha", "dpto", "caps", "especialidad", "profesional", "tipoTurno", "dni", "pacDpto", "coberturaSocial", "edad", "sexo", "turno", "dniPro"]
+    },
+    "Profesional": {
+      "title": "Profesional",
+      "description": "Un registro de profesional médico.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único." },
+        "dniPro": { "type": "string", "description": "DNI del profesional (DNI-PRO)." },
+        "cargaH": { "type": "string", "description": "Carga horaria asignada." },
+        "turEsp": { "type": "string", "description": "Turno o espacio especial asignado." }
+      },
+      "required": ["id", "dniPro", "cargaH", "turEsp"]
+    }
+  },
+  "firestore": {
+    "turnos": {
+      "schema": "Turno",
+      "description": "Colección de turnos médicos."
+    },
+    "profesionales": {
+      "schema": "Profesional",
+      "description": "Colección de profesionales."
+    }
+  }
+}

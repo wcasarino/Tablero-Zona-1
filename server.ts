@@ -11,6 +11,20 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 
 const STORE_FILE = path.join(process.cwd(), 'local_db.json');
+const LINK_FILE = path.join(process.cwd(), 'link.txt');
+const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/17umWewlC-uF4t6zz5q7IGTdajfoLFahZc5e7WEoquSA/edit?usp=sharing';
+
+function getSheetUrl(): string {
+  try {
+    if (fs.existsSync(LINK_FILE)) {
+      const content = fs.readFileSync(LINK_FILE, 'utf-8').trim();
+      if (content) return content;
+    }
+  } catch (err) {
+    console.error('Error reading link.txt:', err);
+  }
+  return DEFAULT_SHEET_URL;
+}
 
 interface AppStore {
   sheetUrl?: string;
@@ -37,7 +51,7 @@ function readStore(): AppStore {
     console.error('Error reading store file:', err);
   }
   return { 
-    sheetUrl: process.env.GOOGLE_SHEET_URL || '',
+    sheetUrl: getSheetUrl(),
     turnos: initialData, 
     profesionales: [], 
     guardias: [], 
@@ -58,38 +72,42 @@ function writeStore(data: Partial<AppStore>) {
 
 // API: Health / Connection Status
 app.get('/api/test-connection', (req, res) => {
-  const store = readStore();
+  const currentUrl = getSheetUrl();
   res.json({
     connected: true,
     mode: 'Google Sheets / Sincronizado',
-    hasSheetUrl: Boolean(store.sheetUrl || process.env.GOOGLE_SHEET_URL),
-    sheetUrl: store.sheetUrl || process.env.GOOGLE_SHEET_URL || '',
+    hasSheetUrl: Boolean(currentUrl),
+    sheetUrl: currentUrl,
   });
 });
 
 // API: Google Sheets URL config
 app.get('/api/sheets/config', (req, res) => {
-  const store = readStore();
   res.json({
-    sheetUrl: store.sheetUrl || process.env.GOOGLE_SHEET_URL || '',
+    sheetUrl: getSheetUrl(),
   });
 });
 
 app.post('/api/sheets/config', (req, res) => {
   const { sheetUrl } = req.body;
-  writeStore({ sheetUrl: String(sheetUrl || '').trim() });
-  res.json({ success: true, sheetUrl: String(sheetUrl || '').trim() });
+  if (sheetUrl && typeof sheetUrl === 'string') {
+    try {
+      fs.writeFileSync(LINK_FILE, sheetUrl.trim() + '\n', 'utf-8');
+    } catch (err) {
+      console.error('Error writing link.txt:', err);
+    }
+  }
+  res.json({ success: true, sheetUrl: getSheetUrl() });
 });
 
 // API: Fetch Google Sheet binary XLSX through backend proxy (bypassing CORS)
 app.post('/api/sheets/fetch', async (req, res) => {
   try {
-    const store = readStore();
-    const rawUrl = (req.body && req.body.url) ? req.body.url : (store.sheetUrl || process.env.GOOGLE_SHEET_URL);
+    const rawUrl = getSheetUrl();
 
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
       return res.status(400).json({ 
-        error: 'No se ha proporcionado ni configurado la URL de la planilla de Google Sheets.' 
+        error: 'No se encontró la URL de la planilla en link.txt.' 
       });
     }
 
@@ -103,7 +121,7 @@ app.post('/api/sheets/fetch', async (req, res) => {
       }
     }
 
-    console.log(`[Google Sheets] Descargando desde: ${exportUrl}`);
+    console.log(`[Google Sheets] Descargando desde URL en link.txt: ${exportUrl}`);
     const fetchResponse = await fetch(exportUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'

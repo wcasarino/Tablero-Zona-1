@@ -6,15 +6,12 @@ import AgendaDashboard from './components/AgendaDashboard';
 import { isWithinInterval, parseISO, format } from 'date-fns';
 import { 
   RefreshCw, 
-  Settings, 
   FileSpreadsheet, 
-  Link2, 
   ShieldAlert, 
   AlertTriangle, 
   Check, 
   X, 
-  Download, 
-  ExternalLink 
+  Download 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { toPng } from 'html-to-image';
@@ -55,11 +52,7 @@ export default function App() {
   const dashboardContainerRef = useRef<HTMLDivElement>(null);
 
   // Google Sheets integration state
-  const [sheetUrl, setSheetUrl] = useState<string>('');
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
-  const [showSheetConfigModal, setShowSheetConfigModal] = useState(false);
-  const [sheetUrlInput, setSheetUrlInput] = useState('');
-  const [sheetConfigError, setSheetConfigError] = useState('');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   const activeAllData = useMemo(() => {
@@ -224,13 +217,12 @@ export default function App() {
         const isConnected = await testConnection();
         if (isConnected) {
           setIsLocalMode(false);
-          const [turnosData, rawProfs, guardiasData, agendasData, fechaAgendaData, sheetsCfg] = await Promise.all([
+          const [turnosData, rawProfs, guardiasData, agendasData, fechaAgendaData] = await Promise.all([
             fetchTurnos(),
             fetchProfesionales(),
             fetchGuardias(),
             fetchAgendas(),
-            fetchFechaAgenda(),
-            getSheetsConfig()
+            fetchFechaAgenda()
           ]);
           if (turnosData && turnosData.length > 0) setTurnos(turnosData);
           if (rawProfs && rawProfs.length > 0) setProfesionales(rawProfs);
@@ -238,11 +230,9 @@ export default function App() {
           if (agendasData && agendasData.length > 0) setAgendas(agendasData);
           if (fechaAgendaData) setFechaAgenda(fechaAgendaData);
 
-          const localUrl = localStorage.getItem('google_sheet_url') || '';
-          const activeUrl = sheetsCfg.sheetUrl || localUrl;
-          if (activeUrl) {
-            setSheetUrl(activeUrl);
-            setSheetUrlInput(activeUrl);
+          // Si aún no hay datos cargados, sincronizar inmediatamente desde link.txt
+          if (!turnosData || turnosData.length === 0) {
+            syncFromGoogleSheets();
           }
         } else {
           setIsLocalMode(true);
@@ -251,11 +241,6 @@ export default function App() {
           const storedGuardias = localStorage.getItem('remixed_guardias');
           const storedAgendas = localStorage.getItem('remixed_agendas');
           const storedFechaAgenda = localStorage.getItem('remixed_fecha_agenda');
-          const localUrl = localStorage.getItem('google_sheet_url') || '';
-          if (localUrl) {
-            setSheetUrl(localUrl);
-            setSheetUrlInput(localUrl);
-          }
           
           if (storedTurnos) setTurnos(JSON.parse(storedTurnos));
           else { localStorage.setItem('remixed_turnos', JSON.stringify(initialData)); setTurnos(initialData); }
@@ -694,20 +679,12 @@ export default function App() {
     };
   };
 
-  const syncFromGoogleSheets = async (targetUrl?: string) => {
-    const urlToUse = (targetUrl !== undefined ? targetUrl : sheetUrl).trim();
-    if (!urlToUse) {
-      setSheetUrlInput('');
-      setSheetConfigError('Por favor ingrese o pegue el enlace de la planilla de Google Sheets.');
-      setShowSheetConfigModal(true);
-      return;
-    }
-
+  const syncFromGoogleSheets = async () => {
     setIsSyncingSheets(true);
     setIsSavingData(true);
 
     try {
-      const buffer = await fetchGoogleSheetBuffer(urlToUse);
+      const buffer = await fetchGoogleSheetBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const { errors, turnos: pTurnos, guardias: pGuardias, profesionales: pProfs, agendas: pAgendas, fechaAgenda: pFechaAgenda } = processWorkbookData(workbook);
 
@@ -731,11 +708,6 @@ export default function App() {
         setIsSavingData(false);
         return;
       }
-
-      // Persist url
-      setSheetUrl(urlToUse);
-      localStorage.setItem('google_sheet_url', urlToUse);
-      await saveSheetsConfig(urlToUse).catch(() => {});
 
       if (isLocalMode) {
         if (hasTurnosToSave) {
@@ -794,26 +766,15 @@ export default function App() {
       setSuccessRecordsCount(totalCount);
       setShowSuccessNotification(true);
       setLastSyncTime(new Date());
-      setShowSheetConfigModal(false);
       setTimeout(() => setShowSuccessNotification(false), 5000);
     } catch (err: any) {
       console.error('Error al sincronizar con DATOSTABLERO:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`No se pudo sincronizar con la planilla DATOSTABLERO:\n\n${msg}\n\nPor favor revise el enlace o ID en el botón de Configuración (⚙️).`);
+      alert(`No se pudo sincronizar con la planilla DATOSTABLERO:\n\n${msg}\n\nVerifique la URL configurada en link.txt.`);
     } finally {
       setIsSyncingSheets(false);
       setIsSavingData(false);
     }
-  };
-
-  const handleSaveSheetConfigAndSync = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sheetUrlInput.trim()) {
-      setSheetConfigError('Ingrese el enlace o ID de la planilla DATOSTABLERO.');
-      return;
-    }
-    setSheetConfigError('');
-    syncFromGoogleSheets(sheetUrlInput.trim());
   };
 
   const filteredData = useMemo(() => {
@@ -998,37 +959,20 @@ export default function App() {
             Descargar PDF Completo
           </button>
           
-          {/* BOTÓN ACTUALIZAR DATOS DESDE DATOSTABLERO */}
-          <div className="flex items-center bg-slate-800 rounded-md p-0.5 border border-slate-700">
-            <span className="hidden xl:inline text-[10px] font-bold text-slate-300 px-2 py-0.5 font-mono">
-              DATOSTABLERO
-            </span>
-            <button 
-              onClick={() => syncFromGoogleSheets()}
-              disabled={isSyncingSheets}
-              title={sheetUrl ? 'Actualizar datos desde planilla DATOSTABLERO' : 'Configurar enlace de DATOSTABLERO'}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer ${
-                isSyncingSheets 
-                  ? 'bg-blue-800 text-blue-200 cursor-wait' 
-                  : 'bg-blue-600 hover:bg-blue-500 text-white'
-              }`}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-              <span>{isSyncingSheets ? 'Actualizando...' : 'Actualizar Datos'}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setSheetUrlInput(sheetUrl);
-                setSheetConfigError('');
-                setShowSheetConfigModal(true);
-              }}
-              title="Configurar enlace de DATOSTABLERO"
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/60 rounded transition-colors cursor-pointer ml-0.5"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {/* BOTÓN ACTUALIZAR DATOS DESDE LINK.TXT */}
+          <button 
+            onClick={() => syncFromGoogleSheets()}
+            disabled={isSyncingSheets}
+            title="Actualizar datos desde Google Sheets (link.txt)"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer ${
+              isSyncingSheets 
+                ? 'bg-blue-800 text-blue-200 cursor-wait' 
+                : 'bg-blue-600 hover:bg-blue-500 text-white'
+            }`}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+            <span>{isSyncingSheets ? 'Actualizando...' : 'Actualizar Datos'}</span>
+          </button>
         </div>
       </header>
 
@@ -1074,7 +1018,7 @@ export default function App() {
           <span className="font-bold flex items-center gap-1.5">
             Fuente de Datos:{" "}
             <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider text-[8px] flex items-center gap-1">
-              <FileSpreadsheet className="w-2.5 h-2.5 inline" /> DATOSTABLERO (Google Sheets)
+              <FileSpreadsheet className="w-2.5 h-2.5 inline" /> Google Sheets (link.txt)
             </span>
           </span>
           {lastSyncTime && (
@@ -1085,96 +1029,6 @@ export default function App() {
           <span className="font-bold text-slate-700">Estado: <span className="text-emerald-600">● Conectado</span></span>
         </div>
       </footer>
-
-      {/* MODAL CONFIGURACIÓN ENLACE DE GOOGLE SHEETS */}
-      {showSheetConfigModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg shrink-0">
-                  <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm">Planilla DATOSTABLERO</h3>
-                  <p className="text-[10px] text-slate-400">Google Sheets permanente con estructura DATOS.xlsx</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowSheetConfigModal(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSaveSheetConfigAndSync} className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Enlace o ID de la planilla DATOSTABLERO:
-                </label>
-                <div className="relative">
-                  <input 
-                    type="text"
-                    autoFocus
-                    placeholder="https://docs.google.com/spreadsheets/d/... o el ID"
-                    className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-800 font-mono"
-                    value={sheetUrlInput}
-                    onChange={(e) => {
-                      setSheetUrlInput(e.target.value);
-                      setSheetConfigError('');
-                    }}
-                  />
-                  <Link2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                </div>
-                {sheetConfigError && (
-                  <p className="text-xs text-red-600 mt-1.5 font-medium flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                    {sheetConfigError}
-                  </p>
-                )}
-              </div>
-
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1.5">
-                <p className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">Vinculación de DATOSTABLERO:</p>
-                <p className="flex items-start gap-1.5">
-                  <span className="text-emerald-600 font-bold shrink-0">1.</span>
-                  <span>En su Google Sheet <strong>DATOSTABLERO</strong>, haga clic en <strong>Compartir</strong>.</span>
-                </p>
-                <p className="flex items-start gap-1.5">
-                  <span className="text-emerald-600 font-bold shrink-0">2.</span>
-                  <span>En <em>Acceso general</em>, elija <strong>Cualquier persona que tenga el vínculo</strong> (Lector).</span>
-                </p>
-                <p className="flex items-start gap-1.5">
-                  <span className="text-emerald-600 font-bold shrink-0">3.</span>
-                  <span>Copie el enlace o el ID y péguelo arriba. El sistema lo recordará siempre.</span>
-                </p>
-                <p className="flex items-start gap-1.5 text-slate-500 pt-1 border-t border-slate-200">
-                  <span>Hojas esperadas: <em>Turnos</em>, <em>Profesionales</em>, <em>Guardias</em>, <em>Agendas</em>, <em>FechaAgenda</em>.</span>
-                </p>
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2 text-xs font-semibold">
-                <button 
-                  type="button"
-                  onClick={() => setShowSheetConfigModal(false)}
-                  className="px-3.5 py-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit"
-                  disabled={isSyncingSheets}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingSheets ? 'Sincronizando...' : 'Guardar y Actualizar'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* MODAL DE COMPATIBILIDAD */}
       {showCompatibilityModal && (

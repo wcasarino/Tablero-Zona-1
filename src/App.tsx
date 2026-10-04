@@ -797,9 +797,9 @@ export default function App() {
       setShowSheetConfigModal(false);
       setTimeout(() => setShowSuccessNotification(false), 5000);
     } catch (err: any) {
-      console.error('Error al sincronizar con Google Sheets:', err);
+      console.error('Error al sincronizar con DATOSTABLERO:', err);
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`No se pudo sincronizar con Google Sheets:\n\n${msg}\n\nPor favor revise el enlace en el botón de Configuración (⚙️).`);
+      alert(`No se pudo sincronizar con la planilla DATOSTABLERO:\n\n${msg}\n\nPor favor revise el enlace o ID en el botón de Configuración (⚙️).`);
     } finally {
       setIsSyncingSheets(false);
       setIsSavingData(false);
@@ -809,7 +809,7 @@ export default function App() {
   const handleSaveSheetConfigAndSync = (e: React.FormEvent) => {
     e.preventDefault();
     if (!sheetUrlInput.trim()) {
-      setSheetConfigError('Ingrese una URL válida de Google Sheets.');
+      setSheetConfigError('Ingrese el enlace o ID de la planilla DATOSTABLERO.');
       return;
     }
     setSheetConfigError('');
@@ -998,12 +998,15 @@ export default function App() {
             Descargar PDF Completo
           </button>
           
-          {/* BOTÓN ACTUALIZAR DATOS DESDE GOOGLE SHEETS */}
+          {/* BOTÓN ACTUALIZAR DATOS DESDE DATOSTABLERO */}
           <div className="flex items-center bg-slate-800 rounded-md p-0.5 border border-slate-700">
+            <span className="hidden xl:inline text-[10px] font-bold text-slate-300 px-2 py-0.5 font-mono">
+              DATOSTABLERO
+            </span>
             <button 
               onClick={() => syncFromGoogleSheets()}
               disabled={isSyncingSheets}
-              title={sheetUrl ? 'Actualizar datos desde Google Sheets' : 'Configurar planilla de Google Sheets'}
+              title={sheetUrl ? 'Actualizar datos desde planilla DATOSTABLERO' : 'Configurar enlace de DATOSTABLERO'}
               className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer ${
                 isSyncingSheets 
                   ? 'bg-blue-800 text-blue-200 cursor-wait' 
@@ -1020,7 +1023,7 @@ export default function App() {
                 setSheetConfigError('');
                 setShowSheetConfigModal(true);
               }}
-              title="Configurar enlace de Google Sheets"
+              title="Configurar enlace de DATOSTABLERO"
               className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/60 rounded transition-colors cursor-pointer ml-0.5"
             >
               <Settings className="w-3.5 h-3.5" />
@@ -1071,7 +1074,7 @@ export default function App() {
           <span className="font-bold flex items-center gap-1.5">
             Fuente de Datos:{" "}
             <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-wider text-[8px] flex items-center gap-1">
-              <FileSpreadsheet className="w-2.5 h-2.5 inline" /> Google Sheets
+              <FileSpreadsheet className="w-2.5 h-2.5 inline" /> DATOSTABLERO (Google Sheets)
             </span>
           </span>
           {lastSyncTime && (
@@ -1093,8 +1096,8 @@ export default function App() {
                   <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm">Planilla de Google Sheets</h3>
-                  <p className="text-[10px] text-slate-400">Sincronización directa con estructura DATOS.xlsx</p>
+                  <h3 className="font-bold text-sm">Planilla DATOSTABLERO</h3>
+                  <p className="text-[10px] text-slate-400">Google Sheets permanente con estructura DATOS.xlsx</p>
                 </div>
               </div>
               <button 
@@ -1108,13 +1111,13 @@ export default function App() {
             <form onSubmit={handleSaveSheetConfigAndSync} className="p-5 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Enlace de la planilla de Google Sheets:
+                  Enlace o ID de la planilla DATOSTABLERO:
                 </label>
                 <div className="relative">
                   <input 
-                    type="url"
+                    type="text"
                     autoFocus
-                    placeholder="https://docs.google.com/spreadsheets/d/.../edit"
+                    placeholder="https://docs.google.com/spreadsheets/d/... o el ID"
                     className="w-full border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-xs bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-800 font-mono"
                     value={sheetUrlInput}
                     onChange={(e) => {
@@ -1133,18 +1136,18 @@ export default function App() {
               </div>
 
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-[11px] text-slate-600 space-y-1.5">
-                <p className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">Pasos para vincular su Google Sheet:</p>
+                <p className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">Vinculación de DATOSTABLERO:</p>
                 <p className="flex items-start gap-1.5">
                   <span className="text-emerald-600 font-bold shrink-0">1.</span>
-                  <span>En su Google Sheet, haga clic en el botón verde <strong>Compartir</strong> (arriba a la derecha).</span>
+                  <span>En su Google Sheet <strong>DATOSTABLERO</strong>, haga clic en <strong>Compartir</strong>.</span>
                 </p>
                 <p className="flex items-start gap-1.5">
                   <span className="text-emerald-600 font-bold shrink-0">2.</span>
-                  <span>En <em>Acceso general</em>, elija <strong>Cualquier persona que tenga el vínculo</strong> (rol Lector).</span>
+                  <span>En <em>Acceso general</em>, elija <strong>Cualquier persona que tenga el vínculo</strong> (Lector).</span>
                 </p>
                 <p className="flex items-start gap-1.5">
                   <span className="text-emerald-600 font-bold shrink-0">3.</span>
-                  <span>Haga clic en <strong>Copiar vínculo</strong> y péguelo en el campo de arriba.</span>
+                  <span>Copie el enlace o el ID y péguelo arriba. El sistema lo recordará siempre.</span>
                 </p>
                 <p className="flex items-start gap-1.5 text-slate-500 pt-1 border-t border-slate-200">
                   <span>Hojas esperadas: <em>Turnos</em>, <em>Profesionales</em>, <em>Guardias</em>, <em>Agendas</em>, <em>FechaAgenda</em>.</span>
@@ -1165,7 +1168,7 @@ export default function App() {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingSheets ? 'Conectando...' : 'Guardar y Actualizar'}</span>
+                  <span>{isSyncingSheets ? 'Sincronizando...' : 'Guardar y Actualizar'}</span>
                 </button>
               </div>
             </form>

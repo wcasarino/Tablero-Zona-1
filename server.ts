@@ -94,9 +94,13 @@ app.post('/api/sheets/fetch', async (req, res) => {
     }
 
     let exportUrl = rawUrl.trim();
-    const match = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (match && match[1]) {
-      exportUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
+    if (!exportUrl.includes('/') && exportUrl.length >= 15) {
+      exportUrl = `https://docs.google.com/spreadsheets/d/${exportUrl}/export?format=xlsx`;
+    } else {
+      const match = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) {
+        exportUrl = `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=xlsx`;
+      }
     }
 
     console.log(`[Google Sheets] Descargando desde: ${exportUrl}`);

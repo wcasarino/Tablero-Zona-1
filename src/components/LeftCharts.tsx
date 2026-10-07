@@ -18,6 +18,12 @@ const COLORS = [
   '#6366f1'  // Indigo
 ];
 
+const PROGRAMADOS_COLORS: Record<string, string> = {
+  CAPS: '#6366f1', // Indigo
+  BOT: '#3b82f6',  // Azul
+  CALL: '#8b5cf6', // Violeta
+};
+
 interface ContainerProps {
   children: React.ReactElement;
   height: number;
@@ -40,11 +46,12 @@ function PrintOptimizedContainer({ children, height, isPrinting, width = 360 }: 
   );
 }
 
-function countByProperty(data: any[], prop: string, sortDesc = true) {
+function countByProperty(data: any[], prop: string, sortDesc = true, weightProp = 'atenciones') {
   const map = new Map<string, number>();
   data.forEach(d => {
     const val = String(d[prop] || 'Desconocido');
-    map.set(val, (map.get(val) || 0) + 1);
+    const weight = Number(d[weightProp]) || 1;
+    map.set(val, (map.get(val) || 0) + weight);
   });
   const result = Array.from(map.entries()).map(([name, count]) => ({ name, count }));
   if (sortDesc) result.sort((a, b) => b.count - a.count);
@@ -52,14 +59,39 @@ function countByProperty(data: any[], prop: string, sortDesc = true) {
 }
 
 function groupAges(data: any[]) {
+  // Check if new aggregated age columns exist
+  let b0_18 = 0, b18_29 = 0, b30_49 = 0, b50_64 = 0, b65 = 0;
+  let hasNewAge = false;
+  data.forEach(d => {
+    if (d.f_0_18 !== undefined || d.m_0_18 !== undefined) {
+      hasNewAge = true;
+      b0_18 += (Number(d.f_0_18) || 0) + (Number(d.m_0_18) || 0);
+      b18_29 += (Number(d.f_18_29) || 0) + (Number(d.m_18_29) || 0);
+      b30_49 += (Number(d.f_30_49) || 0) + (Number(d.m_30_49) || 0);
+      b50_64 += (Number(d.f_50_64) || 0) + (Number(d.m_50_64) || 0);
+      b65 += (Number(d.f_65_plus) || 0) + (Number(d.m_65_plus) || 0);
+    }
+  });
+
+  if (hasNewAge) {
+    return [
+      { name: '0-18 años', count: b0_18 },
+      { name: '18-29 años', count: b18_29 },
+      { name: '30-49 años', count: b30_49 },
+      { name: '50-64 años', count: b50_64 },
+      { name: '65+ años', count: b65 },
+    ];
+  }
+
   const bins = { '0-18': 0, '18-29': 0, '30-49': 0, '50-64': 0, '65+': 0 };
   data.forEach(d => {
     const age = Number(d.edad || 0);
-    if (age <= 18) bins['0-18']++;
-    else if (age <= 29) bins['18-29']++;
-    else if (age <= 49) bins['30-49']++;
-    else if (age <= 64) bins['50-64']++;
-    else bins['65+']++;
+    const weight = Number(d.atenciones) || 1;
+    if (age <= 18) bins['0-18'] += weight;
+    else if (age <= 29) bins['18-29'] += weight;
+    else if (age <= 49) bins['30-49'] += weight;
+    else if (age <= 64) bins['50-64'] += weight;
+    else bins['65+'] += weight;
   });
   return Object.entries(bins).map(([name, count]) => ({ name: `${name} años`, count }));
 }
@@ -78,10 +110,31 @@ export default function LeftCharts({
   profesionales = []
 }: LeftChartsProps) {
   // --- AMBULATORIO CHARTS ---
-  const ambPorTurno = useMemo(() => countByProperty(data, 'turno'), [data]);
-  const ambTopPacDpto = useMemo(() => countByProperty(data, 'pacDpto').slice(0, 5), [data]);
-  const ambTopCobertura = useMemo(() => countByProperty(data, 'coberturaSocial').slice(0, 5), [data]);
+  const ambPorTurno = useMemo(() => {
+    let m = 0, t = 0, n = 0;
+    let hasNew = false;
+    data.forEach(d => {
+      if (d.turnoM !== undefined || d.turnoT !== undefined || d.turnoN !== undefined) {
+        hasNew = true;
+        m += Number(d.turnoM) || 0;
+        t += Number(d.turnoT) || 0;
+        n += Number(d.turnoN) || 0;
+      }
+    });
+    if (hasNew) {
+      return [
+        { name: 'Mañana (M)', count: m },
+        { name: 'Tarde (T)', count: t },
+        { name: 'Noche (N)', count: n },
+      ].filter(x => x.count > 0);
+    }
+    return countByProperty(data, 'turno');
+  }, [data]);
+
+  const ambTopPacDpto = useMemo(() => countByProperty(data, 'pacDpto').filter(x => x.name !== 'Desconocido').slice(0, 5), [data]);
+  const ambTopCobertura = useMemo(() => countByProperty(data, 'coberturaSocial').filter(x => x.name !== 'Desconocido' && x.name !== 'Sin Cobertura').slice(0, 5), [data]);
   const ambEdades = useMemo(() => groupAges(data), [data]);
+
   const ambDiasSemana = useMemo(() => {
     const days = [
       { name: 'Lunes', count: 0 },
@@ -94,6 +147,7 @@ export default function LeftCharts({
     ];
     data.forEach(d => {
       if (!d.fecha) return;
+      const weight = Number(d.atenciones) || 1;
       let dateObj: Date | null = null;
       if (typeof d.fecha === 'string') {
         if (d.fecha.includes('-')) {
@@ -114,25 +168,124 @@ export default function LeftCharts({
         const dayIdx = dateObj.getDay();
         const mappedIdx = dayIdx === 0 ? 6 : dayIdx - 1;
         if (days[mappedIdx]) {
-          days[mappedIdx].count++;
+          days[mappedIdx].count += weight;
         }
       }
     });
     return days;
   }, [data]);
-  const ambSexos = useMemo(() => countByProperty(data, 'sexo'), [data]);
+
+  const ambSexos = useMemo(() => {
+    let fem = 0, masc = 0;
+    let hasNew = false;
+    data.forEach(d => {
+      if (d.fem !== undefined || d.masc !== undefined) {
+        hasNew = true;
+        fem += Number(d.fem) || 0;
+        masc += Number(d.masc) || 0;
+      }
+    });
+    if (hasNew) {
+      return [
+        { name: 'F', count: fem },
+        { name: 'M', count: masc },
+      ].filter(x => x.count > 0);
+    }
+    return countByProperty(data, 'sexo');
+  }, [data]);
+
   const ambPorProfesional = useMemo(() => countByProperty(data, 'profesional').slice(0, 10), [data]);
-  const ambPorTipoAtencion = useMemo(() => countByProperty(data, 'tipo'), [data]);
+  
+  const ambPorTipoAtencion = useMemo(() => {
+    let conTurno = 0, sinTurno = 0;
+    let hasNew = false;
+    data.forEach(d => {
+      if (d.conTurno !== undefined || d.sinTurno !== undefined) {
+        hasNew = true;
+        conTurno += Number(d.conTurno) || 0;
+        sinTurno += Number(d.sinTurno) || 0;
+      }
+    });
+    if (hasNew) {
+      return [
+        { name: 'Con Turno', count: conTurno },
+        { name: 'Sin Turno', count: sinTurno },
+      ].filter(x => x.count > 0);
+    }
+    return countByProperty(data, 'tipo');
+  }, [data]);
+
   const ambPorAnotador = useMemo(() => {
+    let caps = 0, bot = 0, call = 0;
+    let hasNew = false;
+    data.forEach(d => {
+      if (d.canalCaps !== undefined || d.canalBot !== undefined || d.canalCall !== undefined) {
+        hasNew = true;
+        caps += Number(d.canalCaps) || 0;
+        bot += Number(d.canalBot) || 0;
+        call += Number(d.canalCall) || 0;
+      }
+    });
+    if (hasNew) {
+      return [
+        { name: 'CAPS', count: caps },
+        { name: 'BOT', count: bot },
+        { name: 'CALL', count: call },
+      ].filter(x => x.count > 0);
+    }
     const raw = countByProperty(data, 'anotador');
     return raw.map(entry => ({
       name: entry.name === 'Desconocido' || !entry.name.trim() ? 'Sin Anotador' : entry.name,
       count: entry.count
     }));
   }, [data]);
-  const ambPorDpto = useMemo(() => countByProperty(data, 'dpto'), [data]);
+
+  const ambProgramados = useMemo(() => {
+    let conTurnoTotal = 0;
+    let botTotal = 0;
+    let callTotal = 0;
+
+    data.forEach(d => {
+      if (typeof d.conTurno === 'number') {
+        conTurnoTotal += Number(d.conTurno) || 0;
+      } else {
+        const t = String(d.tipo || '').trim().toLowerCase();
+        if (
+          t === 'con turno' ||
+          t === 'con_turno' ||
+          t === 'con-turno' ||
+          t === 'programado' ||
+          t === 'sobreturno' ||
+          t === 'sobre turno' ||
+          (t.includes('con turno') || (!t.includes('sin turno') && (t.includes('program') || t.includes('sobre'))))
+        ) {
+          conTurnoTotal += Number(d.atenciones) || 1;
+        }
+      }
+
+      if (d.canalBot !== undefined) {
+        botTotal += Number(d.canalBot) || 0;
+      } else if (String(d.anotador || '').toUpperCase().includes('BOT')) {
+        botTotal += Number(d.atenciones) || 1;
+      }
+
+      if (d.canalCall !== undefined) {
+        callTotal += Number(d.canalCall) || 0;
+      } else if (String(d.anotador || '').toUpperCase().includes('CALL')) {
+        callTotal += Number(d.atenciones) || 1;
+      }
+    });
+
+    const capsTotal = Math.max(0, conTurnoTotal - botTotal - callTotal);
+
+    return [
+      { name: 'CAPS', count: capsTotal },
+      { name: 'BOT', count: botTotal },
+      { name: 'CALL', count: callTotal },
+    ].filter(x => x.count > 0);
+  }, [data]);
+
   const ambPorCAPS = useMemo(() => countByProperty(data, 'caps').slice(0, 10), [data]);
-  const ambPorEspecialidad = useMemo(() => countByProperty(data, 'especialidad').slice(0, 10), [data]);
 
   // --- GUARDIA CHARTS ---
   const guardiaEdades = useMemo(() => groupAges(data), [data]);
@@ -231,7 +384,41 @@ export default function LeftCharts({
   // --- AMBULATORIO VIEW (ORIGINAL RENDERING PRESERVED) ---
   return (
     <div className="flex flex-col gap-2">
-      {/* 0. Por Atención y Por Anotador (Lado a Lado arriba de Rango Etario) */}
+      {/* 0. Por Anotador y PROGRAMADOS (Lado a Lado) */}
+      <div className="grid grid-cols-2 gap-2">
+        <ChartCard title="Por Anotador" isPrinting={isPrinting}>
+          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <Pie data={ambPorAnotador} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
+                {ambPorAnotador.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[(index + 1) % COLORS.length]} />
+                ))}
+              </Pie>
+              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+            </PieChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+
+        <ChartCard title="PROGRAMADOS" isPrinting={isPrinting}>
+          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <Pie data={ambProgramados} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
+                {ambProgramados.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={PROGRAMADOS_COLORS[entry.name] || COLORS[(index + 5) % COLORS.length]} 
+                  />
+                ))}
+              </Pie>
+              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+            </PieChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      </div>
+
+      {/* 0.b Por Atención y Por Turno (Lado a Lado abajo de la fila anterior) */}
       <div className="grid grid-cols-2 gap-2">
         <ChartCard title="Por Atención" isPrinting={isPrinting}>
           <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
@@ -247,12 +434,12 @@ export default function LeftCharts({
           </PrintOptimizedContainer>
         </ChartCard>
 
-        <ChartCard title="Por Anotador" isPrinting={isPrinting}>
+        <ChartCard title="Por Turno" isPrinting={isPrinting}>
           <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
             <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambPorAnotador} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                {ambPorAnotador.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[(index + 1) % COLORS.length]} />
+              <Pie data={ambPorTurno} innerRadius={15} outerRadius={35} paddingAngle={4} dataKey="count">
+                {ambPorTurno.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
                 ))}
               </Pie>
               <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
@@ -288,7 +475,7 @@ export default function LeftCharts({
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* 2. Distribución por Sexo y Totales por TURNO (Lado a Lado) */}
+      {/* 2. Distribución por Sexo */}
       <div className="grid grid-cols-2 gap-2">
         <ChartCard title="Por Sexo" isPrinting={isPrinting}>
           <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
@@ -306,69 +493,45 @@ export default function LeftCharts({
             </PieChart>
           </PrintOptimizedContainer>
         </ChartCard>
-
-        <ChartCard title="Por Turno" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambPorTurno} innerRadius={15} outerRadius={35} paddingAngle={4} dataKey="count">
-                {ambPorTurno.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
       </div>
 
-      {/* Por Departamento y Top 5: Origen del Paciente (Dpto) (Lado a Lado) */}
-      <div className="grid grid-cols-2 gap-2">
-        <ChartCard title="Por Departamento" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambPorDpto} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                {ambPorDpto.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[(index + 6) % COLORS.length]} />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
+      {/* Top 5: Origen del Paciente (Dpto) (si existe en los datos) */}
+      {ambTopPacDpto.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <ChartCard title="Top 5 Dpto Pac." isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Pie data={ambTopPacDpto} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
+                  {ambTopPacDpto.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+              </PieChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+        </div>
+      )}
 
-        <ChartCard title="Top 5 Dpto Pac." isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambTopPacDpto} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                {ambTopPacDpto.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
-      </div>
-
-      {/* Top 5: Cobertura Social */}
-      <div className="grid grid-cols-2 gap-2">
-        <ChartCard title="Top 5 OS" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambTopCobertura} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                {ambTopCobertura.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
-      </div>
+      {/* Top 5: Cobertura Social (si existe en los datos) */}
+      {ambTopCobertura.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <ChartCard title="Top 5 OS" isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Pie data={ambTopCobertura} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
+                  {ambTopCobertura.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+              </PieChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+        </div>
+      )}
 
     </div>
   );

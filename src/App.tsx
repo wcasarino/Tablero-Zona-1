@@ -309,104 +309,160 @@ export default function App() {
     // 1. Validar y procesar hoja Turnos
     if (turnosSheetName) {
       const worksheet = workbook.Sheets[turnosSheetName];
-      const rowsAsArrays = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      const rowsAsArrays = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
       const headers = rowsAsArrays.length > 0 ? (rowsAsArrays[0] as any[]) : [];
-      const colIHeader = headers.length > 8 ? headers[8] : undefined;
 
-      const expectedHeaders = [
-        'Tipo', 'Dpto', 'CAPS', 'Especialidad', 'Profesional', 'Fecha', 'DNI',
-        'FechaNacimiento', 'Sexo', 'PacProv', 'PacDpto', 'CoberturaSocial', 'Hora', 'TURNO', 'DNI-PRO', 'Días', 'Anotador'
+      const expectedTurnosHeaders = [
+        'Dpto', 'CAPS', 'Especialidad', 'Profesional', 'Fecha', 'DNI-PRO',
+        'Atenciones', 'Fem', 'Masc', 'F-0-18 años', 'F-18-29 años', 'F-30-49 años', 'F-50-64 años', 'F-65+ años',
+        'M-0-18 años', 'M-18-29 años', 'M-30-49 años', 'M-50-64 años', 'M-65+ años',
+        'M', 'T', 'N', 'Sin Turno', 'Con Turno', 'CAPS', 'BOT', 'CALL',
+        'En el Día', 'El día anterior', 'En la Semana', 'Resto'
       ];
+
+      const norm = (s: any) =>
+        String(s ?? '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
 
       const actualHeaders = headers.map(h => String(h || '').trim());
       const missingTurnos: string[] = [];
 
-      for (let i = 0; i < 17; i++) {
+      for (let i = 0; i < 31; i++) {
         const actual = actualHeaders[i] || '';
-        const expected = expectedHeaders[i];
-        if (actual.trim().toLowerCase() !== expected.toLowerCase()) {
+        const expected = expectedTurnosHeaders[i];
+        if (norm(actual) !== norm(expected)) {
           missingTurnos.push(`Hoja "Turnos" - Columna ${getColLetter(i)}: Se esperaba "${expected}" pero se encontró "${actual || 'vacía'}"`);
         }
       }
 
-      if (headers.length < 17 || missingTurnos.length > 0) {
+      if (headers.length < 31 || missingTurnos.length > 0) {
         errors.push(...missingTurnos);
-        if (headers.length < 17) {
-          errors.push(`La hoja "Turnos" solo contiene ${headers.length} columnas con datos (deben ser 17 de la A a la Q).`);
+        if (headers.length < 31) {
+          errors.push(`La hoja "Turnos" solo contiene ${headers.length} columnas con datos (deben ser 31 de la A a la AE).`);
         }
       } else {
-        const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
-        if (jsonData.length > 0) {
-          parsedTurnos = jsonData.map((row: any, i: number) => {
-            const fechaRaw = row['Fecha'] || row['fecha'];
-            let fechaStr = '';
-            if (fechaRaw instanceof Date) {
-              fechaStr = format(fechaRaw, 'yyyy-MM-dd');
-            } else if (typeof fechaRaw === 'string') {
-              if (fechaRaw.includes('/')) {
-                 const parts = fechaRaw.split('/');
-                 if (parts.length === 3) {
-                   fechaStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                 }
-              } else {
-                 fechaStr = fechaRaw;
+        const parseFecha = (fechaRaw: any): string => {
+          if (!fechaRaw) return format(new Date(), 'yyyy-MM-dd');
+          if (fechaRaw instanceof Date) {
+            return format(fechaRaw, 'yyyy-MM-dd');
+          }
+          if (typeof fechaRaw === 'number') {
+            try {
+              const parsed = XLSX.SSF.parse_date_code(fechaRaw);
+              if (parsed && parsed.y && parsed.m && parsed.d) {
+                return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+              }
+            } catch {}
+            const dateObj = new Date(Math.round((fechaRaw - 25569) * 86400 * 1000));
+            if (!isNaN(dateObj.getTime())) {
+              return format(dateObj, 'yyyy-MM-dd');
+            }
+          }
+          if (typeof fechaRaw === 'string') {
+            const trimmed = fechaRaw.trim();
+            if (trimmed.includes('/')) {
+              const parts = trimmed.split('/');
+              if (parts.length === 3) {
+                if (parts[2].length === 4) {
+                  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+                if (parts[0].length === 4) {
+                  return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                }
               }
             }
-            if (!fechaStr) fechaStr = format(new Date(), 'yyyy-MM-dd');
-
-            let edad = Number(row['EDAD'] || row['edad'] || row['Edad'] || 0);
-            const fechaNacRaw = row['FechaNacimiento'] || row['fechaNacimiento'] || row['Fecha Nacimiento'] || row['FECHANACIMIENTO'];
-            if (fechaNacRaw) {
-              let birthDate: Date | null = null;
-              if (fechaNacRaw instanceof Date) {
-                birthDate = fechaNacRaw;
-              } else if (typeof fechaNacRaw === 'string') {
-                if (fechaNacRaw.includes('/')) {
-                   const parts = fechaNacRaw.split('/');
-                   if (parts.length === 3) {
-                     birthDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-                   }
-                } else {
-                   birthDate = new Date(fechaNacRaw);
+            if (trimmed.includes('-')) {
+              const parts = trimmed.split('-');
+              if (parts.length === 3) {
+                if (parts[0].length === 4) return trimmed;
+                if (parts[2].length === 4) {
+                  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                 }
-              } else if (typeof fechaNacRaw === 'number') {
-                birthDate = new Date(Math.round((fechaNacRaw - 25569) * 86400 * 1000));
-              }
-
-              if (birthDate && !isNaN(birthDate.getTime())) {
-                const today = new Date();
-                let years = today.getFullYear() - birthDate.getFullYear();
-                const m = today.getMonth() - birthDate.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-                  years--;
-                }
-                edad = years;
               }
             }
+          }
+          return format(new Date(), 'yyyy-MM-dd');
+        };
 
-            const rawSexo = (colIHeader ? row[colIHeader] : undefined) ?? row['SEXO'] ?? row['sexo'] ?? row['Sexo'];
-            const finalSexo: 'F' | 'M' = rawSexo === 'M' ? 'M' : 'F';
+        const dataRows = rowsAsArrays.slice(1);
+        parsedTurnos = dataRows
+          .filter(row => row && row.length > 0 && (row[0] || row[1] || row[3]))
+          .map((row: any[], i: number) => {
+            const atenciones = Number(row[6]) || 0;
+            const fem = Number(row[7]) || 0;
+            const masc = Number(row[8]) || 0;
+            const f_0_18 = Number(row[9]) || 0;
+            const f_18_29 = Number(row[10]) || 0;
+            const f_30_49 = Number(row[11]) || 0;
+            const f_50_64 = Number(row[12]) || 0;
+            const f_65_plus = Number(row[13]) || 0;
+            const m_0_18 = Number(row[14]) || 0;
+            const m_18_29 = Number(row[15]) || 0;
+            const m_30_49 = Number(row[16]) || 0;
+            const m_50_64 = Number(row[17]) || 0;
+            const m_65_plus = Number(row[18]) || 0;
+            const turnoM = Number(row[19]) || 0;
+            const turnoT = Number(row[20]) || 0;
+            const turnoN = Number(row[21]) || 0;
+            const sinTurno = Number(row[22]) || 0;
+            const conTurno = Number(row[23]) || 0;
+            const canalCaps = Number(row[24]) || 0;
+            const canalBot = Number(row[25]) || 0;
+            const canalCall = Number(row[26]) || 0;
+            const enElDia = Number(row[27]) || 0;
+            const diaAnterior = Number(row[28]) || 0;
+            const enLaSemana = Number(row[29]) || 0;
+            const resto = Number(row[30]) || 0;
+
+            const dniPro = String(row[5] ?? '-').trim();
+            const fechaStr = parseFecha(row[4]);
 
             return {
-              id: `U-${Date.now()}-${i}`,
+              id: `T-${i}`,
+              dpto: String(row[0] ?? '').trim() || 'Desconocido',
+              caps: String(row[1] ?? '').trim() || 'Desconocido',
+              especialidad: String(row[2] ?? '').trim() || 'Desconocido',
+              profesional: String(row[3] ?? '').trim() || 'Desconocido',
               fecha: fechaStr,
-              dpto: row['Dpto'] || row['dpto'] || 'Desconocido',
-              caps: row['CAPS'] || row['caps'] || 'Desconocido',
-              especialidad: row['Especialidad'] || row['especialidad'] || 'Desconocido',
-              profesional: row['Profesional'] || row['profesional'] || 'Desconocido',
-              tipo: row['Tipo'] || row['tipo'] || row['TipoTurno'] || 'Programado',
-              dni: String(row['DNI'] || row['dni'] || `DNI-${i}`),
-              pacDpto: row['PacDpto'] || row['pacDpto'] || 'Desconocido',
-              coberturaSocial: row['CoberturaSocial'] || row['coberturaSocial'] || row['Cobertura Social'] || 'Sin Cobertura',
-              edad,
-              sexo: finalSexo,
-              turno: String(row['TURNO'] || row['turno'] || 'Mañana'),
-              dniPro: String(row['DNI-PRO'] || row['dni-pro'] || row['DNI_PRO'] || row['Dni-Pro'] || row['Dni_Pro'] || '-').trim(),
-              dias: Number(row['Días'] || row['días'] || row['Dias'] || row['dias']) || 0,
-              anotador: String(row['Anotador'] || row['anotador'] || ''),
+              dniPro,
+              atenciones,
+              fem,
+              masc,
+              f_0_18,
+              f_18_29,
+              f_30_49,
+              f_50_64,
+              f_65_plus,
+              m_0_18,
+              m_18_29,
+              m_30_49,
+              m_50_64,
+              m_65_plus,
+              turnoM,
+              turnoT,
+              turnoN,
+              sinTurno,
+              conTurno,
+              canalCaps,
+              canalBot,
+              canalCall,
+              enElDia,
+              diaAnterior,
+              enLaSemana,
+              resto,
+              // Compatibility fields
+              tipo: conTurno > 0 ? 'Con Turno' : 'Sin Turno',
+              anotador: canalBot > 0 ? 'BOT' : (canalCall > 0 ? 'CALL' : 'CAPS'),
+              turno: turnoT > 0 ? 'Tarde' : (turnoN > 0 ? 'Noche' : 'Mañana'),
+              dni: dniPro,
+              edad: 0,
+              sexo: fem >= masc ? 'F' : 'M',
+              dias: enElDia > 0 ? 0 : (diaAnterior > 0 ? 1 : (enLaSemana > 0 ? 5 : 10)),
             };
           });
-        }
       }
     }
 
@@ -793,8 +849,23 @@ export default function App() {
         if (filters.caps.length > 0 && !filters.caps.includes(turno.caps)) return false;
         if (filters.especialidad.length > 0 && !filters.especialidad.includes(turno.especialidad)) return false;
         if (filters.profesional.length > 0 && !filters.profesional.includes(turno.profesional)) return false;
-        if (filters.tipo && filters.tipo.length > 0 && !filters.tipo.includes(turno.tipo)) return false;
-        if (filters.anotador && filters.anotador.length > 0 && !filters.anotador.includes(turno.anotador)) return false;
+        if (filters.tipo && filters.tipo.length > 0) {
+          const hasCon = filters.tipo.includes('Con Turno');
+          const hasSin = filters.tipo.includes('Sin Turno');
+          const rowCon = (Number(turno.conTurno) > 0) || turno.tipo === 'Con Turno';
+          const rowSin = (Number(turno.sinTurno) > 0) || turno.tipo === 'Sin Turno';
+          if (hasCon && !hasSin && !rowCon) return false;
+          if (hasSin && !hasCon && !rowSin) return false;
+        }
+
+        if (filters.anotador && filters.anotador.length > 0) {
+          const matchesCaps = filters.anotador.includes('CAPS') && ((Number(turno.canalCaps) > 0) || turno.anotador === 'CAPS');
+          const matchesBot = filters.anotador.includes('BOT') && ((Number(turno.canalBot) > 0) || turno.anotador === 'BOT');
+          const matchesCall = filters.anotador.includes('CALL') && ((Number(turno.canalCall) > 0) || turno.anotador === 'CALL');
+          if (!matchesCaps && !matchesBot && !matchesCall) {
+            if (!filters.anotador.includes(turno.anotador || '')) return false;
+          }
+        }
         
         if (filters.conCargaHoraria) {
           if (!turno.dniPro || turno.dniPro === '-') return false;
@@ -950,28 +1021,29 @@ export default function App() {
         )}
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
-          <button 
-            onClick={handleDownloadFullDashboard}
-            disabled={isGeneratingPdf}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 transition-colors px-3 py-1.5 rounded text-xs font-semibold shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Descargar PDF Completo
-          </button>
-          
-          {/* BOTÓN ACTUALIZAR DATOS DESDE LINK.TXT */}
+          {/* BOTÓN ACTUALIZAR DATOS DESDE LINK.TXT (A la izquierda, verde oscuro con letras blancas) */}
           <button 
             onClick={() => syncFromGoogleSheets()}
             disabled={isSyncingSheets}
             title="Actualizar datos desde Google Sheets (link.txt)"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold shadow-xs transition-colors cursor-pointer text-white ${
               isSyncingSheets 
-                ? 'bg-blue-800 text-blue-200 cursor-wait' 
-                : 'bg-blue-600 hover:bg-blue-500 text-white'
+                ? 'bg-emerald-900 text-emerald-200 cursor-wait' 
+                : 'bg-emerald-700 hover:bg-emerald-600'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
             <span>{isSyncingSheets ? 'Actualizando...' : 'Actualizar Datos'}</span>
+          </button>
+
+          {/* BOTÓN DESCARGAR PDF COMPLETO (A la derecha, azul con letras blancas) */}
+          <button 
+            onClick={handleDownloadFullDashboard}
+            disabled={isGeneratingPdf}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition-colors px-3 py-1.5 rounded text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isGeneratingPdf ? 'Generando PDF...' : 'Descargar PDF Completo'}</span>
           </button>
         </div>
       </header>
@@ -1013,7 +1085,13 @@ export default function App() {
       </div>
 
       <footer className="bg-slate-200 px-4 py-1.5 text-[10px] flex justify-between items-center shrink-0 border-t border-slate-300">
-        <div className="text-slate-600">Sistema de Gestión Hospitalaria - V 4.2.0 | Zona Sanitaria I Central</div>
+        <div className="flex items-center gap-2 flex-wrap text-slate-700 font-medium">
+          <span>Sistema de Gestión Hospitalaria - V 4.2.0 | Zona Sanitaria I Central</span>
+          <span className="text-slate-400 font-normal">|</span>
+          <span className="bg-indigo-700 text-white font-extrabold px-2 py-0.5 rounded shadow-xs tracking-wide">
+            Desarrollado por Ing. Walter Casarino
+          </span>
+        </div>
         <div className="flex items-center gap-4">
           <span className="font-bold flex items-center gap-1.5">
             Fuente de Datos:{" "}
@@ -1054,29 +1132,45 @@ export default function App() {
             
             <div className="p-5 overflow-y-auto max-h-[70vh]">
               <p className="text-xs text-slate-600 leading-relaxed mb-4">
-                La planilla debe mantener la misma estructura de <strong>DATOS.xlsx</strong> y contener las siguientes hojas con sus respectivas columnas:
+                La planilla debe mantener la estructura esperada y contener las siguientes hojas con sus respectivas columnas:
               </p>
               
               <div className="mb-4">
-                <h4 className="text-xs font-bold text-slate-700 mb-1 bg-slate-100 p-1 rounded font-sans uppercase">1. Hoja "Turnos" (17 Columnas de la A a la Q)</h4>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[10px] font-mono text-slate-600 grid grid-cols-2 gap-x-4 gap-y-1 shadow-inner">
-                  <div>A: <span className="font-semibold text-slate-800">Tipo</span></div>
-                  <div>J: <span className="font-semibold text-slate-800">PacProv</span></div>
-                  <div>B: <span className="font-semibold text-slate-800">Dpto</span></div>
-                  <div>K: <span className="font-semibold text-slate-800">PacDpto</span></div>
-                  <div>C: <span className="font-semibold text-slate-800">CAPS</span></div>
-                  <div>L: <span className="font-semibold text-slate-800">CoberturaSocial</span></div>
-                  <div>D: <span className="font-semibold text-slate-800">Especialidad</span></div>
-                  <div>M: <span className="font-semibold text-slate-800">Hora</span></div>
-                  <div>E: <span className="font-semibold text-slate-800">Profesional</span></div>
-                  <div>N: <span className="font-semibold text-slate-800">TURNO</span></div>
-                  <div>F: <span className="font-semibold text-slate-800">Fecha</span></div>
-                  <div>O: <span className="font-semibold text-slate-800">DNI-PRO</span></div>
-                  <div>G: <span className="font-semibold text-slate-800">DNI</span></div>
-                  <div>P: <span className="font-semibold text-slate-800">Días</span></div>
-                  <div>H: <span className="font-semibold text-slate-800">FechaNacimiento</span></div>
-                  <div>Q: <span className="font-semibold text-slate-800">Anotador</span></div>
-                  <div>I: <span className="font-semibold text-slate-800">Sexo</span></div>
+                <h4 className="text-xs font-bold text-slate-700 mb-1 bg-slate-100 p-1 rounded font-sans uppercase">1. Hoja "Turnos" (31 Columnas de la A a la AE)</h4>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[10px] font-mono text-slate-600 grid grid-cols-3 gap-x-2 gap-y-1 shadow-inner">
+                  <div>A: <span className="font-semibold text-slate-800">Dpto</span></div>
+                  <div>L: <span className="font-semibold text-slate-800">F-30-49 años</span></div>
+                  <div>W: <span className="font-semibold text-slate-800">Sin Turno</span></div>
+                  <div>B: <span className="font-semibold text-slate-800">CAPS</span></div>
+                  <div>M: <span className="font-semibold text-slate-800">F-50-64 años</span></div>
+                  <div>X: <span className="font-semibold text-slate-800">Con Turno</span></div>
+                  <div>C: <span className="font-semibold text-slate-800">Especialidad</span></div>
+                  <div>N: <span className="font-semibold text-slate-800">F-65+ años</span></div>
+                  <div>Y: <span className="font-semibold text-slate-800">CAPS</span></div>
+                  <div>D: <span className="font-semibold text-slate-800">Profesional</span></div>
+                  <div>O: <span className="font-semibold text-slate-800">M-0-18 años</span></div>
+                  <div>Z: <span className="font-semibold text-slate-800">BOT</span></div>
+                  <div>E: <span className="font-semibold text-slate-800">Fecha</span></div>
+                  <div>P: <span className="font-semibold text-slate-800">M-18-29 años</span></div>
+                  <div>AA: <span className="font-semibold text-slate-800">CALL</span></div>
+                  <div>F: <span className="font-semibold text-slate-800">DNI-PRO</span></div>
+                  <div>Q: <span className="font-semibold text-slate-800">M-30-49 años</span></div>
+                  <div>AB: <span className="font-semibold text-slate-800">En el Día</span></div>
+                  <div>G: <span className="font-semibold text-slate-800">Atenciones</span></div>
+                  <div>R: <span className="font-semibold text-slate-800">M-50-64 años</span></div>
+                  <div>AC: <span className="font-semibold text-slate-800">El día anterior</span></div>
+                  <div>H: <span className="font-semibold text-slate-800">Fem</span></div>
+                  <div>S: <span className="font-semibold text-slate-800">M-65+ años</span></div>
+                  <div>AD: <span className="font-semibold text-slate-800">En la Semana</span></div>
+                  <div>I: <span className="font-semibold text-slate-800">Masc</span></div>
+                  <div>T: <span className="font-semibold text-slate-800">M</span></div>
+                  <div>AE: <span className="font-semibold text-slate-800">Resto</span></div>
+                  <div>J: <span className="font-semibold text-slate-800">F-0-18 años</span></div>
+                  <div>U: <span className="font-semibold text-slate-800">T</span></div>
+                  <div></div>
+                  <div>K: <span className="font-semibold text-slate-800">F-18-29 años</span></div>
+                  <div>V: <span className="font-semibold text-slate-800">N</span></div>
+                  <div></div>
                 </div>
               </div>
 

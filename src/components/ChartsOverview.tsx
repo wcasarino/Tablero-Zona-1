@@ -64,11 +64,12 @@ function PrintOptimizedContainer({
   );
 }
 
-function countByProperty(data: any[], prop: string, sortDesc = true) {
+function countByProperty(data: any[], prop: string, sortDesc = true, weightProp = 'atenciones') {
   const map = new Map<string, number>();
   data.forEach((d) => {
     const val = String(d[prop] || 'Desconocido');
-    map.set(val, (map.get(val) || 0) + 1);
+    const weight = Number(d[weightProp]) || 1;
+    map.set(val, (map.get(val) || 0) + weight);
   });
   const result = Array.from(map.entries()).map(([name, count]) => ({
     name,
@@ -151,27 +152,6 @@ export default function ChartsOverview({
   const handleBarChartMouseLeave = () => {
     setHoveredDateKey(null);
     setHoveredDateLabel(null);
-  };
-
-  const [sortProductividad, setSortProductividad] = React.useState<{
-    field: 'profesional' | 'cargaH' | 'turEsp' | 'prohab' | 'conTurno' | 'sinTurno' | 'prom' | 'tot' | 'dias';
-    order: 'asc' | 'desc';
-  }>({ field: 'cargaH', order: 'desc' });
-
-  const toggleSortProductividad = (field: 'profesional' | 'cargaH' | 'turEsp' | 'prohab' | 'conTurno' | 'sinTurno' | 'prom' | 'tot' | 'dias') => {
-    setSortProductividad(prev => ({
-      field,
-      order: prev.field === field && prev.order === 'asc' ? 'desc' : 'asc'
-    }));
-  };
-
-  const getSortIcon = (field: 'profesional' | 'cargaH' | 'turEsp' | 'prohab' | 'conTurno' | 'sinTurno' | 'prom' | 'tot' | 'dias') => {
-    if (sortProductividad.field !== field) {
-      return <ArrowUpDown className="w-3 h-3 text-slate-400 inline-block ml-1 opacity-40 group-hover:opacity-100 transition-opacity" />;
-    }
-    return sortProductividad.order === 'asc' 
-      ? <ArrowUp className="w-3 h-3 text-indigo-600 inline-block ml-1" />
-      : <ArrowDown className="w-3 h-3 text-indigo-600 inline-block ml-1" />;
   };
 
   const aggregatedData = useMemo(() => {
@@ -272,13 +252,17 @@ export default function ChartsOverview({
         diaMap.set(sortKey, { sortKey, name: label, count: 0, conTurno: 0, sinTurno: 0 });
       }
       const entry = diaMap.get(sortKey)!;
-      entry.count++;
-      if (isConTurno(d.tipo)) {
-        entry.conTurno++;
+      const atenciones = Number(d.atenciones) || 1;
+      entry.count += atenciones;
+      if (d.conTurno !== undefined || d.sinTurno !== undefined) {
+        entry.conTurno += Number(d.conTurno || 0);
+        entry.sinTurno += Number(d.sinTurno || 0);
+      } else if (isConTurno(d.tipo)) {
+        entry.conTurno += atenciones;
       } else if (isSinTurno(d.tipo)) {
-        entry.sinTurno++;
+        entry.sinTurno += atenciones;
       } else {
-        entry.sinTurno++;
+        entry.sinTurno += atenciones;
       }
     });
     const turnosPorDiaGrouped = Array.from(diaMap.values()).sort((a, b) =>
@@ -322,164 +306,15 @@ export default function ChartsOverview({
     return "Día";
   }, [aggregatedData.grouping]);
 
-  // --- AMBULATORIO PRODUCTIVIDAD TABLE CALCULATIONS ---
-  const productividad = useMemo(() => {
-    const profMap = new Map<
-      string,
-      {
-        profesional: string;
-        dniPro: string;
-        tot: number;
-        conTurno: number;
-        sinTurno: number;
-        fechas: Set<string>;
-        totHabiles: number;
-        fechasHabiles: Set<string>;
-      }
-    >();
-
-    const isConTurno = (tipo?: string) => {
-      const t = String(tipo || '').trim().toLowerCase();
-      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return true;
-      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return false;
-      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return true;
-      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return false;
-      return t.includes('con turno') || (!t.includes('sin turno') && (t.includes('program') || t.includes('sobre')));
-    };
-
-    const isSinTurno = (tipo?: string) => {
-      const t = String(tipo || '').trim().toLowerCase();
-      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return true;
-      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return false;
-      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return true;
-      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return false;
-      return t.includes('sin turno') || t.includes('inmediat') || t.includes('espont');
-    };
-
-    data.forEach((t) => {
-      const key = t.dniPro || t.profesional;
-      if (!profMap.has(key)) {
-        profMap.set(key, {
-          profesional: t.profesional || "Desconocido",
-          dniPro: t.dniPro || "",
-          tot: 0,
-          conTurno: 0,
-          sinTurno: 0,
-          fechas: new Set<string>(),
-          totHabiles: 0,
-          fechasHabiles: new Set<string>(),
-        });
-      }
-      const p = profMap.get(key)!;
-      p.tot++;
-      if (activeTab === 'GUARDIA') {
-        const u = String(t.urgencia || '').trim().toLowerCase();
-        if (u.includes('urgencia') || u.includes('emergencia')) {
-          p.conTurno++;
-        } else {
-          p.sinTurno++;
-        }
-      } else {
-        if (isConTurno(t.tipo)) {
-          p.conTurno++;
-        } else if (isSinTurno(t.tipo)) {
-          p.sinTurno++;
-        }
-      }
-
-      if (t.fecha) {
-        const dayOnly = t.fecha.split("T")[0];
-        p.fechas.add(dayOnly);
-
-        const dayNum = parseISO(dayOnly).getDay();
-        if (dayNum >= 1 && dayNum <= 5) {
-          p.totHabiles++;
-          p.fechasHabiles.add(dayOnly);
-        }
-      }
-    });
-
-    const result = Array.from(profMap.values()).map((p) => {
-      const proDb = profesionales.find((dbP) => {
-        if (!dbP.dniPro || !p.dniPro) return false;
-        return (
-          dbP.dniPro.trim().toLowerCase() === p.dniPro.trim().toLowerCase()
-        );
-      });
-      const resolvedName = proDb?.profesional || p.profesional;
-      const dias = p.fechas.size;
-      const diasHabiles = p.fechasHabiles.size;
-      return {
-        originalProfesional: resolvedName,
-        profesional:
-          resolvedName.length > 30
-            ? resolvedName.substring(0, 30) + "..."
-            : resolvedName,
-        cargaH: proDb ? proDb.cargaH : "",
-        turEsp: proDb ? proDb.turEsp : "",
-        prom: dias > 0 ? (p.tot / dias).toFixed(1) : "0.0",
-        prohab:
-          diasHabiles > 0 ? (p.totHabiles / diasHabiles).toFixed(1) : "0.0",
-        conTurno: p.conTurno,
-        sinTurno: p.sinTurno,
-        tot: p.tot,
-        dias: dias,
-      };
-    });
-
-    result.sort((a, b) => {
-      let valA: any = a[sortProductividad.field];
-      let valB: any = b[sortProductividad.field];
-
-      if (sortProductividad.field === 'profesional') {
-        valA = a.originalProfesional;
-        valB = b.originalProfesional;
-      }
-
-      const isNumericField = ['cargaH', 'turEsp', 'prom', 'prohab', 'conTurno', 'sinTurno', 'tot', 'dias'].includes(sortProductividad.field);
-
-      if (isNumericField) {
-        const numA = parseFloat(valA);
-        const numB = parseFloat(valB);
-        const isNaNA = isNaN(numA) || valA === "";
-        const isNaNB = isNaN(numB) || valB === "";
-
-        if (isNaNA && isNaNB) return 0;
-        if (isNaNA) return 1; // Empty/NaN values always go to the bottom
-        if (isNaNB) return -1; // Empty/NaN values always go to the bottom
-
-        return sortProductividad.order === 'asc' ? numA - numB : numB - numA;
-      }
-
-      const strA = String(valA || "").toLowerCase();
-      const strB = String(valB || "").toLowerCase();
-
-      return sortProductividad.order === 'asc'
-        ? strA.localeCompare(strB)
-        : strB.localeCompare(strA);
-    });
-    return result;
-  }, [data, profesionales, activeTab, sortProductividad]);
-
   // --- AMBULATORIO EXTRA CHARTS ---
   const turnosPorTipoAtencion = useMemo(() => {
     if (activeTab !== 'AMBULATORIO' || !data) return [];
     return countByProperty(data, 'tipo');
   }, [data, activeTab]);
 
-  const turnosPorDepartamento = useMemo(() => {
-    if (activeTab !== 'AMBULATORIO' || !data) return [];
-    return countByProperty(data, 'dpto');
-  }, [data, activeTab]);
-
   const turnosPorCAPS = useMemo(() => {
     if (activeTab !== 'AMBULATORIO' || !data) return [];
     return countByProperty(data, 'caps').slice(0, 5);
-  }, [data, activeTab]);
-
-  const turnosPorEspecialidad = useMemo(() => {
-    if (activeTab !== 'AMBULATORIO' || !data) return [];
-    return countByProperty(data, 'especialidad').slice(0, 5);
   }, [data, activeTab]);
 
   const turnosPorProfesional = useMemo(() => {
@@ -489,6 +324,27 @@ export default function ChartsOverview({
 
   const turnosPorDiasConTurno = useMemo(() => {
     if (activeTab !== 'AMBULATORIO' || !data || data.length === 0) return [];
+
+    let enElDia = 0, diaAnterior = 0, enLaSemana = 0, resto = 0;
+    let hasNewAnticipacion = false;
+    data.forEach(d => {
+      if (d.enElDia !== undefined || d.diaAnterior !== undefined || d.enLaSemana !== undefined || d.resto !== undefined) {
+        hasNewAnticipacion = true;
+        enElDia += Number(d.enElDia) || 0;
+        diaAnterior += Number(d.diaAnterior) || 0;
+        enLaSemana += Number(d.enLaSemana) || 0;
+        resto += Number(d.resto) || 0;
+      }
+    });
+
+    if (hasNewAnticipacion) {
+      return [
+        { name: 'En el Día', fullLabel: 'En el Día (0 días)', dias: 0, count: enElDia },
+        { name: 'Día Anterior', fullLabel: 'El día anterior (1 día)', dias: 1, count: diaAnterior },
+        { name: 'En la Semana', fullLabel: 'En la Semana (2-7 días)', dias: 2, count: enLaSemana },
+        { name: 'Resto (>7 d)', fullLabel: 'Resto (> 7 días)', dias: 3, count: resto },
+      ];
+    }
 
     const isConTurno = (tipo?: string) => {
       const t = String(tipo || '').trim().toLowerCase();
@@ -505,7 +361,7 @@ export default function ChartsOverview({
     conTurnoRecords.forEach(d => {
       const rawDias = Number(d.dias);
       const diasVal = !isNaN(rawDias) ? rawDias : 0;
-      countsMap.set(diasVal, (countsMap.get(diasVal) || 0) + 1);
+      countsMap.set(diasVal, (countsMap.get(diasVal) || 0) + (Number(d.atenciones) || 1));
     });
 
     const sortedDays = Array.from(countsMap.keys()).sort((a, b) => a - b);
@@ -527,7 +383,7 @@ export default function ChartsOverview({
     const profCounts = new Map<string, number>();
     data.forEach(d => {
       const prof = d.profesional || 'Desconocido';
-      profCounts.set(prof, (profCounts.get(prof) || 0) + 1);
+      profCounts.set(prof, (profCounts.get(prof) || 0) + (Number(d.atenciones) || 1));
     });
     const top5 = Array.from(profCounts.entries())
       .sort((a, b) => b[1] - a[1])
@@ -553,10 +409,11 @@ export default function ChartsOverview({
         
         const bucket = weekMap.get(sortKey)!;
         const prof = d.profesional || 'Desconocido';
+        const atenciones = Number(d.atenciones) || 1;
         if (top5.includes(prof)) {
-          bucket[prof]++;
+          bucket[prof] += atenciones;
         } else {
-          bucket['Otros']++;
+          bucket['Otros'] += atenciones;
         }
       } catch {
         // ignore parsing errors
@@ -574,19 +431,6 @@ export default function ChartsOverview({
     };
   }, [data, activeTab]);
 
-  const productividadExcelData = useMemo(() => {
-    return productividad.map((p) => ({
-      Profesional: p.profesional,
-      CargaH: p.cargaH || '',
-      TurEsp: p.turEsp || '',
-      ATEDIA: p.prohab || '0.0',
-      'Con Turno': p.conTurno || 0,
-      'Sin Turno': p.sinTurno || 0,
-      Tot: p.tot || 0,
-      Días: p.dias || 0,
-    }));
-  }, [productividad]);
-
   // --- AMBULATORIO VIEW (ORIGINAL RENDERING PRESERVED) ---
   return (
     <div
@@ -595,170 +439,6 @@ export default function ChartsOverview({
         isPrinting && "h-auto overflow-visible",
       )}
     >
-      {/* Tabla Productividad (Same width/height as Evolución chart) */}
-      <ChartCard
-        title="Productividad por Profesional"
-        fullWidth
-        isPrinting={isPrinting}
-        excelData={productividadExcelData}
-      >
-        <div
-          className={cn(
-            "border border-slate-200 rounded-lg mx-1",
-            isPrinting
-              ? "h-auto overflow-visible"
-              : "overflow-y-auto overflow-x-auto custom-scrollbar",
-          )}
-          style={{
-            height: isPrinting ? "auto" : "250px",
-            width: "calc(100% - 8px)",
-          }}
-        >
-          <table className="w-full text-left border-collapse min-w-[600px]">
-            <thead className="bg-slate-100 text-[10px] uppercase font-semibold text-slate-600 sticky top-0 z-10 shadow-sm">
-              <tr>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors"
-                  onClick={() => toggleSortProductividad('profesional')}
-                >
-                  <div className="flex items-center">
-                    Profesional
-                    {getSortIcon('profesional')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center"
-                  onClick={() => toggleSortProductividad('cargaH')}
-                >
-                  <div className="flex items-center justify-center">
-                    CargaH
-                    {getSortIcon('cargaH')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors"
-                  onClick={() => toggleSortProductividad('turEsp')}
-                >
-                  <div className="flex items-center">
-                    TurEsp
-                    {getSortIcon('turEsp')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right"
-                  onClick={() => toggleSortProductividad('prohab')}
-                >
-                  <div className="flex items-center justify-end">
-                    ATEDIA
-                    {getSortIcon('prohab')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right"
-                  onClick={() => toggleSortProductividad('conTurno')}
-                >
-                  <div className="flex items-center justify-end">
-                    {activeTab === 'GUARDIA' ? 'Urgencia' : 'Con Turno'}
-                    {getSortIcon('conTurno')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right"
-                  onClick={() => toggleSortProductividad('sinTurno')}
-                >
-                  <div className="flex items-center justify-end">
-                    {activeTab === 'GUARDIA' ? 'Normal' : 'Sin Turno'}
-                    {getSortIcon('sinTurno')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right"
-                  onClick={() => toggleSortProductividad('tot')}
-                >
-                  <div className="flex items-center justify-end">
-                    Tot
-                    {getSortIcon('tot')}
-                  </div>
-                </th>
-                <th 
-                  className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right"
-                  onClick={() => toggleSortProductividad('dias')}
-                >
-                  <div className="flex items-center justify-end">
-                    Días
-                    {getSortIcon('dias')}
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="text-xs divide-y divide-slate-100 bg-white">
-              {productividad.map((p, idx) => {
-                const getAtediaStyle = (prohab: any, turEsp: any) => {
-                  if (!turEsp || String(turEsp).trim() === "") return "text-slate-600";
-                  const prohabVal = parseFloat(prohab);
-                  const turEspVal = parseFloat(turEsp);
-                  if (isNaN(prohabVal) || isNaN(turEspVal)) return "text-slate-600";
-                  if (prohabVal >= turEspVal) {
-                    return "bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold";
-                  } else if (prohabVal >= turEspVal * 0.75) {
-                    return "bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold";
-                  } else {
-                    return "bg-red-100 text-red-800 px-1.5 py-0.5 rounded font-bold";
-                  }
-                };
-
-                return (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                    <td
-                      className={cn(
-                        "py-1.5 px-3 font-medium text-slate-800 whitespace-nowrap",
-                        setFilters && "cursor-pointer select-none hover:text-indigo-600 hover:font-bold"
-                      )}
-                      onDoubleClick={() => {
-                        if (setFilters) {
-                          setFilters(prev => ({ ...prev, profesional: [p.originalProfesional] }));
-                        }
-                      }}
-                      title={setFilters ? `Doble click para seleccionar solo ${p.originalProfesional}` : p.originalProfesional}
-                    >
-                      {p.profesional}
-                    </td>
-                    <td className="py-1.5 px-3 text-slate-600 text-center">
-                      {p.cargaH}
-                    </td>
-                    <td className="py-1.5 px-3 text-slate-600 truncate max-w-[120px]">
-                      {p.turEsp}
-                    </td>
-                    <td className="py-1.5 px-3 text-right font-mono">
-                      <span className={getAtediaStyle(p.prohab, p.turEsp)}>{p.prohab}</span>
-                    </td>
-                    <td className="py-1.5 px-3 text-emerald-700 font-medium text-right font-mono">
-                      {p.conTurno}
-                    </td>
-                    <td className="py-1.5 px-3 text-amber-700 font-medium text-right font-mono">
-                      {p.sinTurno}
-                    </td>
-                    <td className="py-1.5 px-3 text-indigo-600 font-bold text-right font-mono">
-                      {p.tot}
-                    </td>
-                    <td className="py-1.5 px-3 text-slate-500 text-right font-mono">
-                      {p.dias}
-                    </td>
-                  </tr>
-                );
-              })}
-              {productividad.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-6 text-center text-slate-400">
-                    No hay datos para mostrar
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </ChartCard>
-
       {/* Turnos por día (Full Width) */}
       <ChartCard
         title="Turnos por Día"
@@ -907,52 +587,29 @@ export default function ChartsOverview({
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* Top 5: Turnos por CAPS y Top 5: Turnos por Especialidad (Lado a Lado, Barras Verticales) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <ChartCard
-          title="Top 5: Turnos por CAPS"
+      {/* Top 5: Turnos por CAPS (Barras Verticales) */}
+      <ChartCard
+        title="Top 5: Turnos por CAPS"
+        fullWidth
+        isPrinting={isPrinting}
+      >
+        <PrintOptimizedContainer
+          height={180}
           isPrinting={isPrinting}
+          width={760}
         >
-          <PrintOptimizedContainer
-            height={180}
-            isPrinting={isPrinting}
-            width={370}
+          <BarChart
+            data={turnosPorCAPS}
+            margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
           >
-            <BarChart
-              data={turnosPorCAPS}
-              margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
-              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Turnos" />
-            </BarChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
-
-        <ChartCard
-          title="Top 5: Turnos por Especialidad"
-          isPrinting={isPrinting}
-        >
-          <PrintOptimizedContainer
-            height={180}
-            isPrinting={isPrinting}
-            width={370}
-          >
-            <BarChart
-              data={turnosPorEspecialidad}
-              margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
-              <Bar dataKey="count" fill="#06b6d4" radius={[4, 4, 0, 0]} name="Turnos" />
-            </BarChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
-      </div>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
+            <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Turnos" />
+          </BarChart>
+        </PrintOptimizedContainer>
+      </ChartCard>
 
       {/* Top 7: Turnos por Profesional */}
       <ChartCard

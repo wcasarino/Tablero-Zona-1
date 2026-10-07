@@ -150,13 +150,25 @@ export default function FiltersPanel({
       .sort();
     };
 
+    const availableTipos = (() => {
+      const fromData = getAvailable('tipo', 'tipo');
+      if (fromData.length > 0 && !fromData.includes('Sin Anotador')) return fromData;
+      return ['Con Turno', 'Sin Turno'];
+    })();
+
+    const availableAnotadores = (() => {
+      const fromData = getAvailable('anotador', 'anotador');
+      if (fromData.length > 0 && !fromData.every(x => x === 'Desconocido' || !x)) return fromData;
+      return ['CAPS', 'BOT', 'CALL'];
+    })();
+
     return {
       dptos: getAvailable('dpto', 'dpto'),
       caps: getAvailable('caps', 'caps'),
       especialidades: getAvailable('especialidad', 'especialidad'),
       profesionales: getAvailable('profesional', 'profesional'),
-      tipos: getAvailable('tipo', 'tipo'),
-      anotadores: getAvailable('anotador', 'anotador'),
+      tipos: availableTipos,
+      anotadores: availableAnotadores,
       diasSemana: [] as string[],
       canales: [] as string[],
       urgencias: [] as string[],
@@ -307,8 +319,6 @@ export default function FiltersPanel({
           <FilterSelect title="CAPS" field="caps" options={options.caps} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Especialidad" field="especialidad" options={options.especialidades} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Profesional" field="profesional" options={options.profesionales} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
-          <FilterSelect title="Tipo" field="tipo" options={options.tipos} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
-          <FilterSelect title="Anotador" field="anotador" options={options.anotadores} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
         </>
       )}
 

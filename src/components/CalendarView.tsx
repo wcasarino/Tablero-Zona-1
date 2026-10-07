@@ -30,8 +30,9 @@ export default function CalendarView({ data }: { data: Turno[] }) {
     // Group turnos by date
     const map = new Map<string, number>();
     data.forEach(d => {
+      const atenciones = Number(d.atenciones) || 1;
       const count = map.get(d.fecha) || 0;
-      map.set(d.fecha, count + 1);
+      map.set(d.fecha, count + atenciones);
     });
 
     return { minDate: minD, maxDate: maxD, turnosByDate: map };

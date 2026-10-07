@@ -1,20 +1,47 @@
 export interface Turno {
   id: string;
-  fecha: string;
   dpto: string;
   caps: string;
   especialidad: string;
   profesional: string;
-  tipo: 'Atención Inmediata' | 'Programado' | 'SobreTurno' | string;
-  dni: string;
-  pacDpto: string;
-  coberturaSocial: string;
-  edad: number;
-  sexo: 'F' | 'M';
-  turno: string;
+  fecha: string;
   dniPro: string;
-  dias: number;
-  anotador: string;
+  atenciones: number;
+  fem: number;
+  masc: number;
+  f_0_18: number;
+  f_18_29: number;
+  f_30_49: number;
+  f_50_64: number;
+  f_65_plus: number;
+  m_0_18: number;
+  m_18_29: number;
+  m_30_49: number;
+  m_50_64: number;
+  m_65_plus: number;
+  turnoM: number;
+  turnoT: number;
+  turnoN: number;
+  sinTurno: number;
+  conTurno: number;
+  canalCaps: number;
+  canalBot: number;
+  canalCall: number;
+  enElDia: number;
+  diaAnterior: number;
+  enLaSemana: number;
+  resto: number;
+
+  // Optional/compatibility fields
+  tipo?: 'Atención Inmediata' | 'Programado' | 'SobreTurno' | 'Con Turno' | 'Sin Turno' | string;
+  dni?: string;
+  pacDpto?: string;
+  coberturaSocial?: string;
+  edad?: number;
+  sexo?: 'F' | 'M' | string;
+  turno?: string;
+  dias?: number;
+  anotador?: string;
 }
 
 export interface Profesional {

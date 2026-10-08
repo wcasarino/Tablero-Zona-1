@@ -1,9 +1,9 @@
 import React, { useMemo, useRef } from 'react';
 import { Turno, Profesional } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { cn } from '../lib/utils';
+import { cn, getDiaSemanaName } from '../lib/utils';
 import DownloadPdfButton from './DownloadPdfButton';
-import { parseISO } from 'date-fns';
+import { parseISO, format } from 'date-fns';
 
 const COLORS = [
   '#3b82f6', // Azul
@@ -96,6 +96,25 @@ function groupAges(data: any[]) {
   return Object.entries(bins).map(([name, count]) => ({ name: `${name} años`, count }));
 }
 
+function DiaSemanaTooltip({ active, payload, label }: any) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const atenciones = data?.count ?? 0;
+    const dias = data?.diasTrabajados ?? 0;
+    return (
+      <div className="bg-slate-800 text-white text-xs rounded px-2.5 py-1.5 shadow-md border border-slate-700">
+        <p className="font-semibold text-slate-200">{label}</p>
+        <p className="text-white mt-0.5">
+          <span className="text-slate-300">Atenciones: </span>
+          <span className="font-bold">{atenciones}</span>
+          <span className="text-slate-400"> (Días: {dias})</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 interface LeftChartsProps {
   data: any[];
   isPrinting?: boolean;
@@ -137,42 +156,38 @@ export default function LeftCharts({
 
   const ambDiasSemana = useMemo(() => {
     const days = [
-      { name: 'Lunes', count: 0 },
-      { name: 'Martes', count: 0 },
-      { name: 'Miércoles', count: 0 },
-      { name: 'Jueves', count: 0 },
-      { name: 'Viernes', count: 0 },
-      { name: 'Sábado', count: 0 },
-      { name: 'Domingo', count: 0 },
+      { name: 'Lunes', total: 0, dates: new Set<string>() },
+      { name: 'Martes', total: 0, dates: new Set<string>() },
+      { name: 'Miércoles', total: 0, dates: new Set<string>() },
+      { name: 'Jueves', total: 0, dates: new Set<string>() },
+      { name: 'Viernes', total: 0, dates: new Set<string>() },
+      { name: 'Sábado', total: 0, dates: new Set<string>() },
+      { name: 'Domingo', total: 0, dates: new Set<string>() },
     ];
+
     data.forEach(d => {
       if (!d.fecha) return;
       const weight = Number(d.atenciones) || 1;
-      let dateObj: Date | null = null;
-      if (typeof d.fecha === 'string') {
-        if (d.fecha.includes('-')) {
-          dateObj = parseISO(d.fecha);
-        } else if (d.fecha.includes('/')) {
-          const parts = d.fecha.split('/');
-          if (parts.length === 3) {
-            dateObj = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-          }
-        } else {
-          dateObj = new Date(d.fecha);
-        }
-      } else if (d.fecha instanceof Date) {
-        dateObj = d.fecha;
-      }
-
-      if (dateObj && !isNaN(dateObj.getTime())) {
-        const dayIdx = dateObj.getDay();
-        const mappedIdx = dayIdx === 0 ? 6 : dayIdx - 1;
-        if (days[mappedIdx]) {
-          days[mappedIdx].count += weight;
-        }
+      const diaName = getDiaSemanaName(d.diaSemana, d.fecha);
+      const targetDay = days.find(day => day.name === diaName);
+      if (targetDay) {
+        targetDay.total += weight;
+        const dateKey = typeof d.fecha === 'string' ? d.fecha.trim() : format(d.fecha, 'yyyy-MM-dd');
+        targetDay.dates.add(dateKey);
       }
     });
-    return days;
+
+    return days.map(d => {
+      const diasTrabajados = d.dates.size;
+      const promedio = diasTrabajados > 0 ? Math.round(d.total / diasTrabajados) : 0;
+      return {
+        name: d.name,
+        count: promedio,
+        promedio: promedio,
+        total: d.total,
+        diasTrabajados: diasTrabajados,
+      };
+    });
   }, [data]);
 
   const ambSexos = useMemo(() => {
@@ -194,7 +209,10 @@ export default function LeftCharts({
     return countByProperty(data, 'sexo');
   }, [data]);
 
-  const ambPorProfesional = useMemo(() => countByProperty(data, 'profesional').slice(0, 10), [data]);
+  const turnosPorProfesional = useMemo(() => {
+    if (activeTab !== 'AMBULATORIO' || !data) return [];
+    return countByProperty(data, 'profesional').slice(0, 7);
+  }, [data, activeTab]);
   
   const ambPorTipoAtencion = useMemo(() => {
     let conTurno = 0, sinTurno = 0;
@@ -449,7 +467,23 @@ export default function LeftCharts({
         </ChartCard>
       </div>
 
-      {/* 1. Distribución por Rango Etario */}
+      {/* 1. Atenciones por Día de la Semana */}
+      <ChartCard title="Atenciones por Día de la Semana" isPrinting={isPrinting}>
+        <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
+          <BarChart data={ambDiasSemana} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <RechartsTooltip 
+              cursor={{ fill: '#f1f5f9' }} 
+              content={<DiaSemanaTooltip />} 
+            />
+            <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Atenciones" />
+          </BarChart>
+        </PrintOptimizedContainer>
+      </ChartCard>
+
+      {/* 1.b Distribución por Rango Etario */}
       <ChartCard title="Distribución por Rango Etario" isPrinting={isPrinting}>
         <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
           <BarChart data={ambEdades} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
@@ -462,38 +496,46 @@ export default function LeftCharts({
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* 1.b Cantidad por Día de la Semana */}
-      <ChartCard title="Cantidad por Día de la Semana" isPrinting={isPrinting}>
+      {/* 2. Distribución por Sexo */}
+      <ChartCard title="Por Sexo" isPrinting={isPrinting}>
         <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-          <BarChart data={ambDiasSemana} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px' }} />
-            <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Atenciones" />
-          </BarChart>
+          <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+            <Pie data={ambSexos} innerRadius={20} outerRadius={45} paddingAngle={4} dataKey="count">
+              {ambSexos.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.name === 'F' ? '#ec4899' : '#3b82f6'} 
+                />
+              ))}
+            </Pie>
+            <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+            <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} formatter={(val) => val === 'F' ? 'Fem' : 'Masc'} />
+          </PieChart>
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* 2. Distribución por Sexo */}
-      <div className="grid grid-cols-2 gap-2">
-        <ChartCard title="Por Sexo" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={ambSexos} innerRadius={15} outerRadius={35} paddingAngle={4} dataKey="count">
-                {ambSexos.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.name === 'F' ? '#ec4899' : '#3b82f6'} 
-                  />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} formatter={(val) => val === 'F' ? 'Fem' : 'Masc'} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
-      </div>
+      {/* Top 7: Turnos por Profesional */}
+      <ChartCard title="Top 7: Turnos por Profesional" isPrinting={isPrinting}>
+        <PrintOptimizedContainer height={200} isPrinting={isPrinting} width={370}>
+          <BarChart
+            data={turnosPorProfesional}
+            layout="vertical"
+            margin={{ top: 5, right: 10, left: 10, bottom: -5 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+            <XAxis type="number" tick={{ fontSize: 10 }} />
+            <YAxis 
+              dataKey="name" 
+              type="category" 
+              width={110} 
+              tick={{ fontSize: 9 }} 
+              tickFormatter={(val) => typeof val === 'string' && val.length > 20 ? val.slice(0, 18) + '...' : val} 
+            />
+            <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
+            <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Turnos" />
+          </BarChart>
+        </PrintOptimizedContainer>
+      </ChartCard>
 
       {/* Top 5: Origen del Paciente (Dpto) (si existe en los datos) */}
       {ambTopPacDpto.length > 0 && (

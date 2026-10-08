@@ -3,6 +3,7 @@ import { Turno, Filters, Profesional, Agenda } from '../types';
 import { Filter, Calendar, Users, Building, Stethoscope, Eraser, Download } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getDiaSemanaName, DIAS_SEMANA_ORDEN } from '../lib/utils';
 
 interface Props {
   allData: any[];
@@ -144,10 +145,31 @@ export default function FiltersPanel({
         if (field !== 'profesional' && filters.profesional.length > 0 && !filters.profesional.includes(t.profesional)) return false;
         if (field !== 'tipo' && filters.tipo && filters.tipo.length > 0 && !filters.tipo.includes(t.tipo)) return false;
         if (field !== 'anotador' && filters.anotador && filters.anotador.length > 0 && !filters.anotador.includes(t.anotador)) return false;
+        if (field !== 'diaSemana' && filters.diaSemana && filters.diaSemana.length > 0) {
+          const itemDia = getDiaSemanaName(t.diaSemana, t.fecha);
+          if (!filters.diaSemana.includes(itemDia)) return false;
+        }
         return true;
       }).map(t => String(t[dataField] || ''))))
       .filter(Boolean)
       .sort();
+    };
+
+    const getAvailableDiasSemana = () => {
+      const set = new Set<string>();
+      allData.forEach(t => {
+        if (!isWithinDate(t.fecha)) return;
+        if (filters.dpto.length > 0 && !filters.dpto.includes(t.dpto)) return;
+        if (filters.caps.length > 0 && !filters.caps.includes(t.caps)) return;
+        if (filters.especialidad.length > 0 && !filters.especialidad.includes(t.especialidad)) return;
+        if (filters.profesional.length > 0 && !filters.profesional.includes(t.profesional)) return;
+        if (filters.tipo && filters.tipo.length > 0 && !filters.tipo.includes(t.tipo)) return;
+        if (filters.anotador && filters.anotador.length > 0 && !filters.anotador.includes(t.anotador)) return;
+        const dia = getDiaSemanaName(t.diaSemana, t.fecha);
+        if (dia) set.add(dia);
+      });
+      const filtered = DIAS_SEMANA_ORDEN.filter(d => set.has(d));
+      return filtered.length > 0 ? filtered : DIAS_SEMANA_ORDEN;
     };
 
     const availableTipos = (() => {
@@ -169,7 +191,7 @@ export default function FiltersPanel({
       profesionales: getAvailable('profesional', 'profesional'),
       tipos: availableTipos,
       anotadores: availableAnotadores,
-      diasSemana: [] as string[],
+      diasSemana: getAvailableDiasSemana(),
       canales: [] as string[],
       urgencias: [] as string[],
       egresos: [] as string[],
@@ -319,6 +341,7 @@ export default function FiltersPanel({
           <FilterSelect title="CAPS" field="caps" options={options.caps} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Especialidad" field="especialidad" options={options.especialidades} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Profesional" field="profesional" options={options.profesionales} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
+          <FilterSelect title="Día Semana" field="diaSemana" options={options.diasSemana} filters={filters} setFilters={setFilters} onToggle={handleToggle} />
         </>
       )}
 

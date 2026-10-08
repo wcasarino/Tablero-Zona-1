@@ -317,11 +317,6 @@ export default function ChartsOverview({
     return countByProperty(data, 'caps').slice(0, 5);
   }, [data, activeTab]);
 
-  const turnosPorProfesional = useMemo(() => {
-    if (activeTab !== 'AMBULATORIO' || !data) return [];
-    return countByProperty(data, 'profesional').slice(0, 7);
-  }, [data, activeTab]);
-
   const turnosPorDiasConTurno = useMemo(() => {
     if (activeTab !== 'AMBULATORIO' || !data || data.length === 0) return [];
 
@@ -607,31 +602,6 @@ export default function ChartsOverview({
             <YAxis tick={{ fontSize: 11 }} />
             <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
             <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Turnos" />
-          </BarChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
-
-      {/* Top 7: Turnos por Profesional */}
-      <ChartCard
-        title="Top 7: Turnos por Profesional"
-        fullWidth
-        isPrinting={isPrinting}
-      >
-        <PrintOptimizedContainer
-          height={200}
-          isPrinting={isPrinting}
-          width={760}
-        >
-          <BarChart
-            data={turnosPorProfesional}
-            layout="vertical"
-            margin={{ top: 5, right: 10, left: 30, bottom: -5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-            <XAxis type="number" tick={{ fontSize: 11 }} />
-            <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 10 }} />
-            <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
-            <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Turnos" />
           </BarChart>
         </PrintOptimizedContainer>
       </ChartCard>

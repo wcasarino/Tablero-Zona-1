@@ -16,6 +16,7 @@ import {
 import * as XLSX from 'xlsx';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { getDiaSemanaName } from './lib/utils';
 import {
   fetchTurnos,
   replaceTurnos,
@@ -849,6 +850,10 @@ export default function App() {
         if (filters.caps.length > 0 && !filters.caps.includes(turno.caps)) return false;
         if (filters.especialidad.length > 0 && !filters.especialidad.includes(turno.especialidad)) return false;
         if (filters.profesional.length > 0 && !filters.profesional.includes(turno.profesional)) return false;
+        if (filters.diaSemana && filters.diaSemana.length > 0) {
+          const itemDia = getDiaSemanaName(turno.diaSemana, turno.fecha);
+          if (!filters.diaSemana.includes(itemDia)) return false;
+        }
         if (filters.tipo && filters.tipo.length > 0) {
           const hasCon = filters.tipo.includes('Con Turno');
           const hasSin = filters.tipo.includes('Sin Turno');

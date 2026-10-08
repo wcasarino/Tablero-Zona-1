@@ -42,6 +42,7 @@ export interface Turno {
   turno?: string;
   dias?: number;
   anotador?: string;
+  diaSemana?: string;
 }
 
 export interface Profesional {

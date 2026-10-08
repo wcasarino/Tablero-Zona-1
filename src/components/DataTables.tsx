@@ -86,10 +86,10 @@ function groupByAmbulatorio(data: any[], prop: string) {
     // CAPS = Con Turno - BOT - CALL
     const caps = Math.max(0, entry.conTurno - entry.bot - entry.call);
 
-    // Porcentajes calculados con respecto a Con Turno
-    const pctCaps = entry.conTurno > 0 ? ((caps / entry.conTurno) * 100).toFixed(1) + '%' : '0.0%';
-    const pctBot = entry.conTurno > 0 ? ((entry.bot / entry.conTurno) * 100).toFixed(1) + '%' : '0.0%';
-    const pctCall = entry.conTurno > 0 ? ((entry.call / entry.conTurno) * 100).toFixed(1) + '%' : '0.0%';
+    // Porcentajes calculados con respecto a Con Turno (entero más cercano sin decimales)
+    const pctCaps = entry.conTurno > 0 ? Math.round((caps / entry.conTurno) * 100) + '%' : '0%';
+    const pctBot = entry.conTurno > 0 ? Math.round((entry.bot / entry.conTurno) * 100) + '%' : '0%';
+    const pctCall = entry.conTurno > 0 ? Math.round((entry.call / entry.conTurno) * 100) + '%' : '0%';
 
     return { 
       name, 
@@ -147,10 +147,10 @@ export default function DataTables({
     if (hasNew) {
       const total = enElDia + diaAnterior + enLaSemana + resto;
       return [
-        { name: 'En el Día', count: enElDia, pct: total > 0 ? ((enElDia / total) * 100).toFixed(1) + '%' : '0.0%' },
-        { name: 'El día anterior', count: diaAnterior, pct: total > 0 ? ((diaAnterior / total) * 100).toFixed(1) + '%' : '0.0%' },
-        { name: 'En la Semana', count: enLaSemana, pct: total > 0 ? ((enLaSemana / total) * 100).toFixed(1) + '%' : '0.0%' },
-        { name: 'Resto (> 7 días)', count: resto, pct: total > 0 ? ((resto / total) * 100).toFixed(1) + '%' : '0.0%' },
+        { name: 'En el Día', count: enElDia, pct: total > 0 ? Math.round((enElDia / total) * 100) + '%' : '0%' },
+        { name: 'El día anterior', count: diaAnterior, pct: total > 0 ? Math.round((diaAnterior / total) * 100) + '%' : '0%' },
+        { name: 'En la Semana', count: enLaSemana, pct: total > 0 ? Math.round((enLaSemana / total) * 100) + '%' : '0%' },
+        { name: 'Resto (> 7 días)', count: resto, pct: total > 0 ? Math.round((resto / total) * 100) + '%' : '0%' },
       ];
     }
 
@@ -172,7 +172,7 @@ export default function DataTables({
       return Object.entries(bins).map(([name, count]) => ({
         name,
         count,
-        pct: total > 0 ? ((count / total) * 100).toFixed(1) + '%' : '0.0%'
+        pct: total > 0 ? Math.round((count / total) * 100) + '%' : '0%'
       }));
     }
     return [];
@@ -493,9 +493,9 @@ function ScrollableTable({
       call += Number(r.call) || 0;
     });
     const caps = Math.max(0, conTurno - bot - call);
-    const pctCaps = conTurno > 0 ? ((caps / conTurno) * 100).toFixed(1) + '%' : '0.0%';
-    const pctBot = conTurno > 0 ? ((bot / conTurno) * 100).toFixed(1) + '%' : '0.0%';
-    const pctCall = conTurno > 0 ? ((call / conTurno) * 100).toFixed(1) + '%' : '0.0%';
+    const pctCaps = conTurno > 0 ? Math.round((caps / conTurno) * 100) + '%' : '0%';
+    const pctBot = conTurno > 0 ? Math.round((bot / conTurno) * 100) + '%' : '0%';
+    const pctCall = conTurno > 0 ? Math.round((call / conTurno) * 100) + '%' : '0%';
     return { count, conTurno, caps, bot, call, pctCaps, pctBot, pctCall };
   }, [data]);
 
@@ -504,7 +504,7 @@ function ScrollableTable({
       if (showPct) {
         return {
           [col1]: row.name,
-          '%': row.pct ?? '0.0%',
+          '%': row.pct ?? '0%',
           'Cant': row.count
         };
       }
@@ -512,9 +512,9 @@ function ScrollableTable({
         return {
           [col1]: row.name,
           'Días': row.dias ?? 0,
-          'CAPS': row.pctCaps ?? '0.0%',
-          'BOT': row.pctBot ?? '0.0%',
-          'CALL': row.pctCall ?? '0.0%',
+          'CAPS': row.pctCaps ?? '0%',
+          'BOT': row.pctBot ?? '0%',
+          'CALL': row.pctCall ?? '0%',
           'Cant': row.count
         };
       }
@@ -609,7 +609,7 @@ function ScrollableTable({
                 {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
                 {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
                 {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
-                {showPct && <td className="px-1.5 py-1 text-blue-700 font-bold text-right font-mono">{totals.count > 0 ? '100.0%' : '0.0%'}</td>}
+                {showPct && <td className="px-1.5 py-1 text-blue-700 font-bold text-right font-mono">{totals.count > 0 ? '100%' : '0%'}</td>}
                 <td className="px-1.5 py-1 text-slate-900 font-bold text-right font-mono">{totals.count}</td>
               </tr>
             </tfoot>

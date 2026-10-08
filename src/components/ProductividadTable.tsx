@@ -95,16 +95,17 @@ export default function ProductividadTable({
           }
         }
 
-        // Canales CAPS, BOT, CALL
-        if (t.canalCaps !== undefined || t.canalBot !== undefined || t.canalCall !== undefined) {
-          p.canalCaps += Number(t.canalCaps) || 0;
+        // Canales BOT, CALL
+        if (t.canalBot !== undefined && t.canalBot !== null && !isNaN(Number(t.canalBot)) && String(t.canalBot).trim() !== '') {
           p.canalBot += Number(t.canalBot) || 0;
+        } else if (String(t.anotador || '').toUpperCase().includes('BOT')) {
+          p.canalBot += atenciones;
+        }
+
+        if (t.canalCall !== undefined && t.canalCall !== null && !isNaN(Number(t.canalCall)) && String(t.canalCall).trim() !== '') {
           p.canalCall += Number(t.canalCall) || 0;
-        } else {
-          const anotador = String(t.anotador || '').toUpperCase();
-          if (anotador.includes('BOT')) p.canalBot += atenciones;
-          else if (anotador.includes('CALL')) p.canalCall += atenciones;
-          else if (anotador.includes('CAPS')) p.canalCaps += atenciones;
+        } else if (String(t.anotador || '').toUpperCase().includes('CALL')) {
+          p.canalCall += atenciones;
         }
       }
 
@@ -130,6 +131,13 @@ export default function ProductividadTable({
       const resolvedName = proDb?.profesional || p.profesional;
       const dias = p.fechas.size;
       const diasHabiles = p.fechasHabiles.size;
+
+      // CAPS = Con Turno menos BOT y CALL
+      const canalCaps = Math.max(0, p.conTurno - p.canalBot - p.canalCall);
+      const pctCaps = p.conTurno > 0 ? Math.round((canalCaps / p.conTurno) * 100) + '%' : '0%';
+      const pctBot = p.conTurno > 0 ? Math.round((p.canalBot / p.conTurno) * 100) + '%' : '0%';
+      const pctCall = p.conTurno > 0 ? Math.round((p.canalCall / p.conTurno) * 100) + '%' : '0%';
+
       return {
         originalProfesional: resolvedName,
         profesional:
@@ -139,9 +147,12 @@ export default function ProductividadTable({
         prom: dias > 0 ? (p.tot / dias).toFixed(1) : '0.0',
         prohab: diasHabiles > 0 ? (p.totHabiles / diasHabiles).toFixed(1) : '0.0',
         tot: p.tot,
-        canalCaps: p.canalCaps,
+        canalCaps,
         canalBot: p.canalBot,
         canalCall: p.canalCall,
+        pctCaps,
+        pctBot,
+        pctCall,
         conTurno: p.conTurno,
         sinTurno: p.sinTurno,
         dias: dias,
@@ -213,6 +224,9 @@ export default function ProductividadTable({
     });
 
     const avgProhab = countProhab > 0 ? (sumProhab / countProhab).toFixed(1) : '0.0';
+    const pctCaps = conTurno > 0 ? Math.round((canalCaps / conTurno) * 100) + '%' : '0%';
+    const pctBot = conTurno > 0 ? Math.round((canalBot / conTurno) * 100) + '%' : '0%';
+    const pctCall = conTurno > 0 ? Math.round((canalCall / conTurno) * 100) + '%' : '0%';
 
     return {
       count: productividad.length,
@@ -220,6 +234,9 @@ export default function ProductividadTable({
       canalCaps,
       canalBot,
       canalCall,
+      pctCaps,
+      pctBot,
+      pctCall,
       conTurno,
       sinTurno,
       avgProhab,
@@ -233,9 +250,9 @@ export default function ProductividadTable({
       TurEsp: p.turEsp || '',
       ATEDIA: p.prohab || '0.0',
       Tot: p.tot || 0,
-      CAPS: p.canalCaps || 0,
-      BOT: p.canalBot || 0,
-      CALL: p.canalCall || 0,
+      CAPS: `${p.canalCaps} (${p.pctCaps})`,
+      BOT: `${p.canalBot} (${p.pctBot})`,
+      CALL: `${p.canalCall} (${p.pctCall})`,
       'Con Turno': p.conTurno || 0,
       'Sin Turno': p.sinTurno || 0,
       Días: p.dias || 0,
@@ -316,7 +333,8 @@ export default function ProductividadTable({
           <thead className="bg-slate-100 text-[10px] uppercase font-semibold text-slate-600 sticky top-0 z-10 shadow-xs">
             <tr>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors align-bottom"
                 onClick={() => toggleSort('profesional')}
               >
                 <div className="flex items-center">
@@ -325,7 +343,8 @@ export default function ProductividadTable({
                 </div>
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center w-16"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center w-16 align-bottom"
                 onClick={() => toggleSort('cargaH')}
               >
                 <div className="flex items-center justify-center">
@@ -334,7 +353,8 @@ export default function ProductividadTable({
                 </div>
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center w-20"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center w-20 align-bottom"
                 onClick={() => toggleSort('turEsp')}
               >
                 <div className="flex items-center justify-center">
@@ -343,7 +363,8 @@ export default function ProductividadTable({
                 </div>
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-20"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-20 align-bottom"
                 onClick={() => toggleSort('prohab')}
               >
                 <div className="flex items-center justify-end">
@@ -353,7 +374,8 @@ export default function ProductividadTable({
               </th>
               {/* TOT MOVIDO LUEGO DE ATEDIA */}
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-indigo-100 bg-indigo-50/50 select-none group transition-colors text-right w-20 font-bold text-indigo-900"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-indigo-100 bg-indigo-50/50 select-none group transition-colors text-right w-20 font-bold text-indigo-900 align-bottom"
                 onClick={() => toggleSort('tot')}
               >
                 <div className="flex items-center justify-end">
@@ -361,36 +383,16 @@ export default function ProductividadTable({
                   {getSortIcon('tot')}
                 </div>
               </th>
-              {/* COLUMNAS CAPS BOT CALL LUEGO DE TOT */}
+              {/* TITULO ARRIBA QUE ABARCA LAS TRES CON LABEL PROGRAMADOS */}
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-emerald-100 bg-emerald-50/40 select-none group transition-colors text-right w-18 text-emerald-900"
-                onClick={() => toggleSort('canalCaps')}
+                colSpan={3}
+                className="py-1 px-2 border-b border-indigo-200 bg-indigo-100/70 text-center text-[10px] font-bold text-indigo-900 tracking-wider"
               >
-                <div className="flex items-center justify-end">
-                  CAPS
-                  {getSortIcon('canalCaps')}
-                </div>
+                Programados
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-blue-100 bg-blue-50/40 select-none group transition-colors text-right w-18 text-blue-900"
-                onClick={() => toggleSort('canalBot')}
-              >
-                <div className="flex items-center justify-end">
-                  BOT
-                  {getSortIcon('canalBot')}
-                </div>
-              </th>
-              <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-purple-100 bg-purple-50/40 select-none group transition-colors text-right w-18 text-purple-900"
-                onClick={() => toggleSort('canalCall')}
-              >
-                <div className="flex items-center justify-end">
-                  CALL
-                  {getSortIcon('canalCall')}
-                </div>
-              </th>
-              <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-24"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-24 align-bottom"
                 onClick={() => toggleSort('conTurno')}
               >
                 <div className="flex items-center justify-end">
@@ -399,7 +401,8 @@ export default function ProductividadTable({
                 </div>
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-24"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-24 align-bottom"
                 onClick={() => toggleSort('sinTurno')}
               >
                 <div className="flex items-center justify-end">
@@ -408,12 +411,42 @@ export default function ProductividadTable({
                 </div>
               </th>
               <th
-                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-16"
+                rowSpan={2}
+                className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-16 align-bottom"
                 onClick={() => toggleSort('dias')}
               >
                 <div className="flex items-center justify-end">
                   Días
                   {getSortIcon('dias')}
+                </div>
+              </th>
+            </tr>
+            <tr>
+              <th
+                className="py-1.5 px-2 border-b border-slate-200 cursor-pointer hover:bg-emerald-100 bg-emerald-50/40 select-none group transition-colors text-right min-w-[76px] text-emerald-900"
+                onClick={() => toggleSort('canalCaps')}
+              >
+                <div className="flex items-center justify-end">
+                  CAPS
+                  {getSortIcon('canalCaps')}
+                </div>
+              </th>
+              <th
+                className="py-1.5 px-2 border-b border-slate-200 cursor-pointer hover:bg-blue-100 bg-blue-50/40 select-none group transition-colors text-right min-w-[76px] text-blue-900"
+                onClick={() => toggleSort('canalBot')}
+              >
+                <div className="flex items-center justify-end">
+                  BOT
+                  {getSortIcon('canalBot')}
+                </div>
+              </th>
+              <th
+                className="py-1.5 px-2 border-b border-slate-200 cursor-pointer hover:bg-purple-100 bg-purple-50/40 select-none group transition-colors text-right min-w-[76px] text-purple-900"
+                onClick={() => toggleSort('canalCall')}
+              >
+                <div className="flex items-center justify-end">
+                  CALL
+                  {getSortIcon('canalCall')}
                 </div>
               </th>
             </tr>
@@ -453,14 +486,17 @@ export default function ProductividadTable({
                   {p.tot}
                 </td>
                 {/* CAPS BOT CALL LUEGO DE TOT */}
-                <td className="py-1.5 px-3 text-emerald-700 font-medium text-right font-mono bg-emerald-50/20">
-                  {p.canalCaps}
+                <td className="py-1.5 px-2.5 text-emerald-800 font-medium text-right font-mono bg-emerald-50/20 whitespace-nowrap">
+                  <span className="font-bold">{p.canalCaps}</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold ml-1">({p.pctCaps})</span>
                 </td>
-                <td className="py-1.5 px-3 text-blue-700 font-medium text-right font-mono bg-blue-50/20">
-                  {p.canalBot}
+                <td className="py-1.5 px-2.5 text-blue-800 font-medium text-right font-mono bg-blue-50/20 whitespace-nowrap">
+                  <span className="font-bold">{p.canalBot}</span>
+                  <span className="text-[10px] text-blue-600 font-semibold ml-1">({p.pctBot})</span>
                 </td>
-                <td className="py-1.5 px-3 text-purple-700 font-medium text-right font-mono bg-purple-50/20">
-                  {p.canalCall}
+                <td className="py-1.5 px-2.5 text-purple-800 font-medium text-right font-mono bg-purple-50/20 whitespace-nowrap">
+                  <span className="font-bold">{p.canalCall}</span>
+                  <span className="text-[10px] text-purple-600 font-semibold ml-1">({p.pctCall})</span>
                 </td>
                 <td className="py-1.5 px-3 text-teal-700 font-medium text-right font-mono">
                   {p.conTurno}
@@ -493,14 +529,17 @@ export default function ProductividadTable({
                 <td className="py-2 px-3 text-right font-mono text-indigo-700 font-bold bg-indigo-100/40">
                   {totals.tot}
                 </td>
-                <td className="py-2 px-3 text-right font-mono text-emerald-800 font-bold bg-emerald-100/40">
-                  {totals.canalCaps}
+                <td className="py-2 px-2.5 text-right font-mono text-emerald-800 font-bold bg-emerald-100/40 whitespace-nowrap">
+                  <span>{totals.canalCaps}</span>
+                  <span className="text-[10px] font-semibold ml-1">({totals.pctCaps})</span>
                 </td>
-                <td className="py-2 px-3 text-right font-mono text-blue-800 font-bold bg-blue-100/40">
-                  {totals.canalBot}
+                <td className="py-2 px-2.5 text-right font-mono text-blue-800 font-bold bg-blue-100/40 whitespace-nowrap">
+                  <span>{totals.canalBot}</span>
+                  <span className="text-[10px] font-semibold ml-1">({totals.pctBot})</span>
                 </td>
-                <td className="py-2 px-3 text-right font-mono text-purple-800 font-bold bg-purple-100/40">
-                  {totals.canalCall}
+                <td className="py-2 px-2.5 text-right font-mono text-purple-800 font-bold bg-purple-100/40 whitespace-nowrap">
+                  <span>{totals.canalCall}</span>
+                  <span className="text-[10px] font-semibold ml-1">({totals.pctCall})</span>
                 </td>
                 <td className="py-2 px-3 text-right font-mono text-teal-800 font-bold">
                   {totals.conTurno}

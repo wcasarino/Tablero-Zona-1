@@ -841,9 +841,12 @@ export default function App() {
         if (filters.caps.length > 0 && !filters.caps.includes(g.caps)) return false;
         if (filters.profesional.length > 0 && !filters.profesional.includes(g.profesional)) return false;
         if (filters.urgencia && filters.urgencia.length > 0 && !filters.urgencia.includes(g.urgencia)) return false;
-        if (filters.egreso && filters.egreso.length > 0 && !filters.egreso.includes(g.egreso)) return false;
-        if (filters.triage && filters.triage.length > 0 && !filters.triage.includes(g.nivel)) return false;
+        if (filters.triage && filters.triage.length > 0 && !filters.triage.includes(String(g.nivel || '').trim())) return false;
         if (filters.estado && filters.estado.length > 0 && !filters.estado.includes(g.estadoEgreso)) return false;
+        if (filters.diaSemana && filters.diaSemana.length > 0) {
+          const itemDia = getDiaSemanaName(undefined, g.fecha);
+          if (!filters.diaSemana.includes(itemDia)) return false;
+        }
       } else {
         const turno = item as Turno;
         if (filters.dpto.length > 0 && !filters.dpto.includes(turno.dpto)) return false;

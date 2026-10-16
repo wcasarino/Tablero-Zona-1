@@ -111,13 +111,35 @@ export default function FiltersPanel({
           if (field !== 'caps' && filters.caps.length > 0 && !filters.caps.includes(g.caps)) return false;
           if (field !== 'profesional' && filters.profesional.length > 0 && !filters.profesional.includes(g.profesional)) return false;
           if (field !== 'urgencia' && filters.urgencia && filters.urgencia.length > 0 && !filters.urgencia.includes(g.urgencia)) return false;
-          if (field !== 'egreso' && filters.egreso && filters.egreso.length > 0 && !filters.egreso.includes(g.egreso)) return false;
-          if (field !== 'triage' && filters.triage && filters.triage.length > 0 && !filters.triage.includes(g.nivel)) return false;
+          if (field !== 'triage' && filters.triage && filters.triage.length > 0 && !filters.triage.includes(String(g.nivel || '').trim())) return false;
           if (field !== 'estado' && filters.estado && filters.estado.length > 0 && !filters.estado.includes(g.estadoEgreso)) return false;
+          if (field !== 'diaSemana' && filters.diaSemana && filters.diaSemana.length > 0) {
+            const itemDia = getDiaSemanaName(undefined, g.fecha);
+            if (!filters.diaSemana.includes(itemDia)) return false;
+          }
           return true;
-        }).map(g => String(g[dataField] || ''))))
+        }).map(g => String(g[dataField] || '').trim())))
         .filter(Boolean)
         .sort();
+      };
+
+      const getGuardiaDiasSemana = () => {
+        return Array.from(new Set(allData.filter(g => {
+          if (!isWithinDate(g.fecha)) return false;
+          if (filters.caps.length > 0 && !filters.caps.includes(g.caps)) return false;
+          if (filters.profesional.length > 0 && !filters.profesional.includes(g.profesional)) return false;
+          if (filters.urgencia && filters.urgencia.length > 0 && !filters.urgencia.includes(g.urgencia)) return false;
+          if (filters.triage && filters.triage.length > 0 && !filters.triage.includes(String(g.nivel || '').trim())) return false;
+          if (filters.estado && filters.estado.length > 0 && !filters.estado.includes(g.estadoEgreso)) return false;
+          return true;
+        }).map(g => getDiaSemanaName(undefined, g.fecha))))
+        .filter(Boolean)
+        .sort((a, b) => {
+          const idxA = DIAS_SEMANA_ORDEN.indexOf(a);
+          const idxB = DIAS_SEMANA_ORDEN.indexOf(b);
+          if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+          return a.localeCompare(b);
+        });
       };
       
       return {
@@ -127,10 +149,10 @@ export default function FiltersPanel({
         profesionales: getGuardiaAvailable('profesional', 'profesional'),
         tipos: [] as string[],
         anotadores: [] as string[],
-        diasSemana: [] as string[],
+        diasSemana: getGuardiaDiasSemana(),
         canales: [] as string[],
         urgencias: getGuardiaAvailable('urgencia', 'urgencia'),
-        egresos: getGuardiaAvailable('egreso', 'egreso'),
+        egresos: [] as string[],
         triages: getGuardiaAvailable('triage', 'nivel'),
         estados: getGuardiaAvailable('estado', 'estadoEgreso')
       };
@@ -220,6 +242,10 @@ export default function FiltersPanel({
       anotador: [],
       diaSemana: [],
       canal: [],
+      urgencia: [],
+      egreso: [],
+      triage: [],
+      estado: [],
       dateFrom: null, 
       dateTo: null, 
       conCargaHoraria: false,
@@ -331,9 +357,10 @@ export default function FiltersPanel({
         <>
           <FilterSelect title="CAPS" field="caps" options={options.caps} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Urgencia" field="urgencia" options={options.urgencias} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
-          <FilterSelect title="Egreso" field="egreso" options={options.egresos} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
+          <FilterSelect title="Triage" field="triage" options={options.triages} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Estado" field="estado" options={options.estados} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Profesional" field="profesional" options={options.profesionales} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
+          <FilterSelect title="Por Día" field="diaSemana" options={options.diasSemana} filters={filters} setFilters={setFilters} onToggle={handleToggle} />
         </>
       ) : (
         <>

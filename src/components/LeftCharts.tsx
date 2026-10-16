@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { Turno, Profesional } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from 'recharts';
 import { cn, getDiaSemanaName } from '../lib/utils';
 import DownloadPdfButton from './DownloadPdfButton';
 import { parseISO, format } from 'date-fns';
@@ -96,17 +96,17 @@ function groupAges(data: any[]) {
   return Object.entries(bins).map(([name, count]) => ({ name: `${name} años`, count }));
 }
 
-function DiaSemanaTooltip({ active, payload, label }: any) {
+function DiaSemanaTooltip({ active, payload, label, prefix = 'Atenciones' }: any) {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
-    const atenciones = data?.count ?? 0;
+    const promedio = data?.count ?? data?.promedio ?? 0;
     const dias = data?.diasTrabajados ?? 0;
     return (
       <div className="bg-slate-800 text-white text-xs rounded px-2.5 py-1.5 shadow-md border border-slate-700">
         <p className="font-semibold text-slate-200">{label}</p>
         <p className="text-white mt-0.5">
-          <span className="text-slate-300">Atenciones: </span>
-          <span className="font-bold">{atenciones}</span>
+          <span className="text-slate-300">{prefix}: </span>
+          <span className="font-bold">{promedio}</span>
           <span className="text-slate-400"> (Días: {dias})</span>
         </p>
       </div>
@@ -309,43 +309,11 @@ export default function LeftCharts({
   const guardiaEdades = useMemo(() => groupAges(data), [data]);
   const guardiaDiasSemana = ambDiasSemana; // Same logic as ambulatoy
   const guardiaPorCAPS = useMemo(() => countByProperty(data, 'caps').slice(0, 10), [data]);
-  const guardiaPorUrgencia = useMemo(() => countByProperty(data, 'urgencia'), [data]);
-  const guardiaPorTriage = useMemo(() => countByProperty(data, 'nivel'), [data]);
   const guardiaPorEgreso = useMemo(() => countByProperty(data, 'egreso'), [data]);
 
   if (activeTab === 'GUARDIA') {
     return (
       <div className="flex flex-col gap-2">
-        <div className="grid grid-cols-2 gap-2">
-          <ChartCard title="Por Urgencia" isPrinting={isPrinting}>
-            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <Pie data={guardiaPorUrgencia} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                  {guardiaPorUrgencia.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-                <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-              </PieChart>
-            </PrintOptimizedContainer>
-          </ChartCard>
-
-          <ChartCard title="Por Nivel (Triage)" isPrinting={isPrinting}>
-            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
-              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <Pie data={guardiaPorTriage} innerRadius={15} outerRadius={35} paddingAngle={2} dataKey="count">
-                  {guardiaPorTriage.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[(index + 4) % COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-                <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-              </PieChart>
-            </PrintOptimizedContainer>
-          </ChartCard>
-        </div>
-
         <ChartCard title="Distribución por Rango Etario" isPrinting={isPrinting}>
           <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
             <BarChart data={guardiaEdades} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
@@ -358,43 +326,58 @@ export default function LeftCharts({
           </PrintOptimizedContainer>
         </ChartCard>
 
-        <ChartCard title="Cantidad por Día de la Semana" isPrinting={isPrinting}>
+        <ChartCard title="Promedio de Atenciones por Día" isPrinting={isPrinting}>
           <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-            <BarChart data={guardiaDiasSemana} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
+            <BarChart data={guardiaDiasSemana} margin={{ top: 12, right: 10, left: -25, bottom: -10 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
-              <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px' }} />
-              <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Atenciones" />
+              <RechartsTooltip 
+                cursor={{ fill: '#f1f5f9' }} 
+                content={<DiaSemanaTooltip prefix="Promedio" />} 
+              />
+              <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Promedio">
+                <LabelList dataKey="count" position="top" fill="#334155" fontSize={10} fontWeight="bold" />
+              </Bar>
             </BarChart>
           </PrintOptimizedContainer>
         </ChartCard>
 
-        <ChartCard title="Por CAPS (Top 10)" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-            <BarChart data={guardiaPorCAPS} margin={{ top: 5, right: 10, left: -25, bottom: -10 }} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-              <XAxis type="number" tick={{ fontSize: 10 }} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={110} />
-              <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px' }} />
-              <Bar dataKey="count" fill="#14b8a6" radius={[0, 2, 2, 0]} name="Atenciones" />
-            </BarChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
+        {/* Por CAPS y Por Egreso uno al lado del otro */}
+        <div className="grid grid-cols-2 gap-2">
+          <ChartCard title="Por CAPS" isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+              <BarChart data={guardiaPorCAPS} margin={{ top: 12, right: 5, left: -25, bottom: -10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 8 }} 
+                  interval={0}
+                  tickFormatter={(v) => typeof v === 'string' && v.length > 6 ? v.slice(0, 5) + '..' : v} 
+                />
+                <YAxis tick={{ fontSize: 9 }} />
+                <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Bar dataKey="count" fill="#14b8a6" radius={[2, 2, 0, 0]} name="Atenciones">
+                  <LabelList dataKey="count" position="top" fill="#334155" fontSize={8} fontWeight="bold" />
+                </Bar>
+              </BarChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
 
-        <ChartCard title="Por Egreso" isPrinting={isPrinting}>
-          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-              <Pie data={guardiaPorEgreso} innerRadius={25} outerRadius={50} paddingAngle={2} dataKey="count">
-                {guardiaPorEgreso.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-              <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
-            </PieChart>
-          </PrintOptimizedContainer>
-        </ChartCard>
+          <ChartCard title="Por Egreso" isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Pie data={guardiaPorEgreso} innerRadius={18} outerRadius={38} paddingAngle={2} dataKey="count">
+                  {guardiaPorEgreso.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+              </PieChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+        </div>
       </div>
     );
   }
@@ -467,18 +450,20 @@ export default function LeftCharts({
         </ChartCard>
       </div>
 
-      {/* 1. Atenciones por Día de la Semana */}
-      <ChartCard title="Atenciones por Día de la Semana" isPrinting={isPrinting}>
+      {/* 1. Promedio de Atenciones por Día */}
+      <ChartCard title="Promedio de Atenciones por Día" isPrinting={isPrinting}>
         <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-          <BarChart data={ambDiasSemana} margin={{ top: 5, right: 10, left: -25, bottom: -10 }}>
+          <BarChart data={ambDiasSemana} margin={{ top: 12, right: 10, left: -25, bottom: -10 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
             <XAxis dataKey="name" tick={{ fontSize: 10 }} />
             <YAxis tick={{ fontSize: 10 }} />
             <RechartsTooltip 
               cursor={{ fill: '#f1f5f9' }} 
-              content={<DiaSemanaTooltip />} 
+              content={<DiaSemanaTooltip prefix="Promedio" />} 
             />
-            <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Atenciones" />
+            <Bar dataKey="count" fill="#3b82f6" radius={[2, 2, 0, 0]} name="Promedio">
+              <LabelList dataKey="count" position="top" fill="#334155" fontSize={10} fontWeight="bold" />
+            </Bar>
           </BarChart>
         </PrintOptimizedContainer>
       </ChartCard>

@@ -81,6 +81,7 @@ function groupByAmbulatorio(data: any[], prop: string) {
     const dias = entry.fechas.size;
     const diasHabiles = entry.fechasHabiles.size;
     const prom = dias > 0 ? (entry.count / dias).toFixed(1) : '0.0';
+    const atedia = dias > 0 ? Math.round(entry.count / dias) : 0;
     const prohab = diasHabiles > 0 ? (entry.countHabiles / diasHabiles).toFixed(1) : '0.0';
 
     // CAPS = Con Turno - BOT - CALL
@@ -96,6 +97,7 @@ function groupByAmbulatorio(data: any[], prop: string) {
       count: entry.count, 
       dias, 
       prom, 
+      atedia,
       prohab,
       conTurno: entry.conTurno,
       bot: entry.bot,
@@ -273,6 +275,7 @@ export default function DataTables({
           data={guardiaCaps} 
           col1="CAPS" 
           showKpis={true} 
+          isGuardia={true}
           isPrinting={isPrinting} 
           onDoubleClickRow={setFilters ? (val) => setFilters(prev => ({ ...prev, caps: [val] })) : undefined}
         />
@@ -281,10 +284,11 @@ export default function DataTables({
           data={guardiaProfesional} 
           col1="Profesional" 
           showKpis={true} 
+          isGuardia={true}
           isPrinting={isPrinting} 
           onDoubleClickRow={setFilters ? (val) => setFilters(prev => ({ ...prev, profesional: [val] })) : undefined}
         />
-        <ScrollableTable title="Resumen: Diagnóstico" data={guardiaDiagnostico} col1="Diagnóstico" isPrinting={isPrinting} />
+        <ScrollableTable title="Resumen: Diagnóstico" data={guardiaDiagnostico} col1="Diagnóstico" maxCharsCol1={20} isPrinting={isPrinting} />
         {!isPrinting && (
           <ScrollableTable title="Resumen: Cobertura Social" data={guardiaCobertura} col1="Cobertura" isPrinting={isPrinting} />
         )}
@@ -451,6 +455,7 @@ function ScrollableTable({
   showKpis = false, 
   showCanales = false,
   showPct = false,
+  isGuardia = false,
   isPrinting = false,
   onDoubleClickRow,
   maxCharsCol1
@@ -461,6 +466,7 @@ function ScrollableTable({
     count: number, 
     dias?: number, 
     prom?: string, 
+    atedia?: number,
     prohab?: string,
     pctCaps?: string,
     pctBot?: string,
@@ -475,6 +481,7 @@ function ScrollableTable({
   showKpis?: boolean, 
   showCanales?: boolean,
   showPct?: boolean,
+  isGuardia?: boolean,
   isPrinting?: boolean,
   onDoubleClickRow?: (name: string) => void,
   maxCharsCol1?: number
@@ -519,6 +526,14 @@ function ScrollableTable({
         };
       }
       if (showKpis) {
+        if (isGuardia) {
+          return {
+            [col1]: row.name,
+            'Días': row.dias ?? 0,
+            'ATEDIA': row.atedia !== undefined ? row.atedia : (row.dias && row.dias > 0 ? Math.round(row.count / row.dias) : 0),
+            'Cant': row.count
+          };
+        }
         return {
           [col1]: row.name,
           'Días': row.dias ?? 0,
@@ -528,11 +543,11 @@ function ScrollableTable({
         };
       }
       return {
-        [col1]: row.name,
+        [col1]: maxCharsCol1 && row.name.length > maxCharsCol1 ? row.name.slice(0, maxCharsCol1) : row.name,
         'Cant': row.count
       };
     });
-  }, [data, col1, showKpis, showCanales, showPct]);
+  }, [data, col1, showKpis, showCanales, showPct, isGuardia, maxCharsCol1]);
 
   return (
     <div ref={tableRef} className={cn(
@@ -560,9 +575,19 @@ function ScrollableTable({
               {showCanales && <th className="px-1 py-1 font-bold text-indigo-700 text-right border-b border-slate-300 w-12" title="% CAPS sobre Con Turno">CAPS</th>}
               {showCanales && <th className="px-1 py-1 font-bold text-blue-700 text-right border-b border-slate-300 w-12" title="% BOT sobre Con Turno">BOT</th>}
               {showCanales && <th className="px-1 py-1 font-bold text-purple-700 text-right border-b border-slate-300 w-12" title="% CALL sobre Con Turno">CALL</th>}
-              {showKpis && !showCanales && <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">Días</th>}
-              {showKpis && !showCanales && <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">ProHab</th>}
-              {showKpis && !showCanales && <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">Prom</th>}
+              {showKpis && !showCanales && isGuardia && (
+                <>
+                  <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">Días</th>
+                  <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">ATEDIA</th>
+                </>
+              )}
+              {showKpis && !showCanales && !isGuardia && (
+                <>
+                  <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">Días</th>
+                  <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">ProHab</th>
+                  <th className="px-2 py-1 font-bold text-slate-600 text-right border-b border-slate-300">Prom</th>
+                </>
+              )}
               {showPct && <th className="px-1.5 py-1 font-bold text-blue-700 text-right border-b border-slate-300 w-14">%</th>}
               <th className="px-1.5 py-1 font-bold text-slate-700 text-right border-b border-slate-300 w-10">Cant</th>
             </tr>
@@ -585,16 +610,28 @@ function ScrollableTable({
                 {showCanales && <td className="px-1 py-1 text-indigo-700 font-semibold text-right font-mono">{row.pctCaps}</td>}
                 {showCanales && <td className="px-1 py-1 text-blue-700 font-semibold text-right font-mono">{row.pctBot}</td>}
                 {showCanales && <td className="px-1 py-1 text-purple-700 font-semibold text-right font-mono">{row.pctCall}</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-500 text-right">{row.dias}</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-500 text-right font-semibold text-slate-700">{row.prohab}</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-500 text-right">{row.prom}</td>}
+                {showKpis && !showCanales && isGuardia && (
+                  <>
+                    <td className="px-2 py-1 text-slate-500 text-right font-mono">{row.dias}</td>
+                    <td className="px-2 py-1 text-slate-700 font-semibold text-right font-mono">
+                      {row.atedia !== undefined ? row.atedia : (row.dias && row.dias > 0 ? Math.round(row.count / row.dias) : 0)}
+                    </td>
+                  </>
+                )}
+                {showKpis && !showCanales && !isGuardia && (
+                  <>
+                    <td className="px-2 py-1 text-slate-500 text-right font-mono">{row.dias}</td>
+                    <td className="px-2 py-1 text-slate-500 text-right font-semibold text-slate-700 font-mono">{row.prohab}</td>
+                    <td className="px-2 py-1 text-slate-500 text-right font-mono">{row.prom}</td>
+                  </>
+                )}
                 {showPct && <td className="px-1.5 py-1 text-blue-700 font-semibold text-right font-mono">{row.pct}</td>}
                 <td className="px-1.5 py-1 text-slate-700 font-bold text-right font-mono">{row.count}</td>
               </tr>
             ))}
             {data.length === 0 && (
               <tr>
-                <td colSpan={showCanales ? 6 : showKpis ? 5 : showPct ? 3 : 2} className="px-4 py-4 text-center text-slate-400 text-xs">Sin datos</td>
+                <td colSpan={showCanales ? 6 : showKpis ? (isGuardia ? 4 : 5) : showPct ? 3 : 2} className="px-4 py-4 text-center text-slate-400 text-xs">Sin datos</td>
               </tr>
             )}
           </tbody>
@@ -606,9 +643,19 @@ function ScrollableTable({
                 {showCanales && <td className="px-1 py-1 text-indigo-700 font-bold text-right font-mono">{totals.pctCaps}</td>}
                 {showCanales && <td className="px-1 py-1 text-blue-700 font-bold text-right font-mono">{totals.pctBot}</td>}
                 {showCanales && <td className="px-1 py-1 text-purple-700 font-bold text-right font-mono">{totals.pctCall}</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
-                {showKpis && !showCanales && <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>}
+                {showKpis && !showCanales && isGuardia && (
+                  <>
+                    <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>
+                    <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>
+                  </>
+                )}
+                {showKpis && !showCanales && !isGuardia && (
+                  <>
+                    <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>
+                    <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>
+                    <td className="px-2 py-1 text-slate-400 text-right font-mono">-</td>
+                  </>
+                )}
                 {showPct && <td className="px-1.5 py-1 text-blue-700 font-bold text-right font-mono">{totals.count > 0 ? '100%' : '0%'}</td>}
                 <td className="px-1.5 py-1 text-slate-900 font-bold text-right font-mono">{totals.count}</td>
               </tr>

@@ -15,6 +15,7 @@ import {
   Pie,
   Cell,
   Legend,
+  LabelList,
 } from "recharts";
 import { startOfWeek, format, parseISO } from "date-fns";
 import { cn } from "../lib/utils";
@@ -98,6 +99,40 @@ const normalizeToYyyyMmDd = (val: string): string | null => {
   if (!isNaN(dateObj.getTime())) {
     return format(dateObj, 'yyyy-MM-dd');
   }
+  return null;
+};
+
+const parseHourFromRow = (rawHora: any): number | null => {
+  if (rawHora === undefined || rawHora === null) return null;
+  const str = String(rawHora).trim();
+  if (!str || str === '-') return null;
+
+  const timeMatch = str.match(/(\d{1,2}):(\d{1,2})/);
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1], 10);
+    const isPM = /pm/i.test(str);
+    const isAM = /am/i.test(str);
+    if (isPM && hour < 12) hour += 12;
+    if (isAM && hour === 12) hour = 0;
+    return hour;
+  }
+
+  const num = Number(str);
+  if (!isNaN(num)) {
+    if (num >= 0 && num < 1) {
+      return Math.floor(num * 24);
+    }
+    if (num >= 1 && num <= 24) {
+      return Math.floor(num) % 24;
+    }
+  }
+
+  if (str.includes('T')) {
+    const timePart = str.split('T')[1];
+    const match = timePart.match(/(\d{1,2}):(\d{1,2})/);
+    if (match) return parseInt(match[1], 10);
+  }
+
   return null;
 };
 
@@ -426,7 +461,94 @@ export default function ChartsOverview({
     };
   }, [data, activeTab]);
 
-  // --- AMBULATORIO VIEW (ORIGINAL RENDERING PRESERVED) ---
+  const guardiaPorUrgencia = useMemo(() => {
+    if (activeTab !== 'GUARDIA' || !data) return [];
+    return countByProperty(data, 'urgencia');
+  }, [data, activeTab]);
+
+  const guardiaPorTriage = useMemo(() => {
+    if (activeTab !== 'GUARDIA' || !data) return [];
+    return countByProperty(data, 'nivel');
+  }, [data, activeTab]);
+
+  const guardiaPorHorario = useMemo(() => {
+    if (activeTab !== 'GUARDIA' || !data) return [];
+    let de20a07 = 0;
+    let de07a13 = 0;
+    let de14a20 = 0;
+
+    data.forEach((d: any) => {
+      const h = parseHourFromRow(d.hora);
+      if (h === null) return;
+      const count = Number(d.atenciones) || 1;
+
+      if (h >= 20 || h < 7) {
+        de20a07 += count;
+      } else if (h >= 7 && h < 14) {
+        de07a13 += count;
+      } else if (h >= 14 && h < 20) {
+        de14a20 += count;
+      }
+    });
+
+    return [
+      { name: 'De 20 a 07', count: de20a07 },
+      { name: 'De 07 a 13', count: de07a13 },
+      { name: 'De 14 a 20', count: de14a20 },
+    ];
+  }, [data, activeTab]);
+
+  const guardiaPorMinutosEspera = useMemo(() => {
+    if (activeTab !== 'GUARDIA' || !data) return [];
+    let menor10 = 0;
+    let de10a30 = 0;
+    let de30a60 = 0;
+    let de60a120 = 0;
+    let mayor120 = 0;
+
+    data.forEach((d: any) => {
+      if (d.minutosEspera === undefined || d.minutosEspera === null || String(d.minutosEspera).trim() === '') return;
+      const m = Number(d.minutosEspera);
+      if (isNaN(m)) return;
+      const count = Number(d.atenciones) || 1;
+
+      if (m < 10) {
+        menor10 += count;
+      } else if (m < 31) {
+        de10a30 += count;
+      } else if (m < 60) {
+        de30a60 += count;
+      } else if (m < 120) {
+        de60a120 += count;
+      } else {
+        mayor120 += count;
+      }
+    });
+
+    return [
+      { name: '< 10', count: menor10 },
+      { name: 'De 10 a 30', count: de10a30 },
+      { name: 'De 30 a 60', count: de30a60 },
+      { name: 'De 60 a 120', count: de60a120 },
+      { name: '> 120', count: mayor120 },
+    ];
+  }, [data, activeTab]);
+
+  const guardiaPorDpto = useMemo(() => {
+    if (activeTab !== 'GUARDIA' || !data) return [];
+    const all = countByProperty(data, 'dpto', true).filter(x => x.name !== 'Desconocido' && x.name.trim() !== '');
+    if (all.length <= 10) {
+      return all;
+    }
+    const top9 = all.slice(0, 9);
+    const rest = all.slice(9);
+    const sumRest = rest.reduce((acc, curr) => acc + curr.count, 0);
+    return [
+      ...top9,
+      { name: 'Otros', count: sumRest }
+    ];
+  }, [data, activeTab]);
+
   return (
     <div
       className={cn(
@@ -434,9 +556,17 @@ export default function ChartsOverview({
         isPrinting && "h-auto overflow-visible",
       )}
     >
-      {/* Turnos por día (Full Width) */}
+      {/* Turnos por día / Atenciones por Día o Semana (Full Width) */}
       <ChartCard
-        title="Turnos por Día"
+        title={
+          activeTab === 'GUARDIA'
+            ? aggregatedData.grouping === 'week'
+              ? 'Atenciones por Semana'
+              : aggregatedData.grouping === 'month'
+              ? 'Atenciones por Mes'
+              : 'Atenciones por Día'
+            : 'Turnos por Día'
+        }
         fullWidth
         isPrinting={isPrinting}
       >
@@ -475,136 +605,271 @@ export default function ChartsOverview({
                 border: "none",
                 boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
               }}
+              formatter={
+                activeTab === 'GUARDIA'
+                  ? (value: any) => [`${value} atenciones`, 'Cantidad']
+                  : undefined
+              }
             />
-            <Legend
-              verticalAlign="top"
-              align="right"
-              height={22}
-              iconType="circle"
-              wrapperStyle={{ fontSize: "11px", paddingBottom: "4px" }}
-            />
-            <Bar
-              dataKey="conTurno"
-              stackId="turnos"
-              fill="#10b981"
-              name="Con Turno"
-              onDoubleClick={handleChartDoubleClick}
-              className={setFilters ? "cursor-pointer" : undefined}
-            />
-            <Bar
-              dataKey="sinTurno"
-              stackId="turnos"
-              fill="#f59e0b"
-              radius={[4, 4, 0, 0]}
-              name="Sin Turno"
-              onDoubleClick={handleChartDoubleClick}
-              className={setFilters ? "cursor-pointer" : undefined}
-            />
-          </BarChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
-
-      {/* Dias de anotados (Full Width) */}
-      <ChartCard
-        title="Dias de anotados"
-        fullWidth
-        isPrinting={isPrinting}
-      >
-        <PrintOptimizedContainer
-          height={180}
-          isPrinting={isPrinting}
-          width={760}
-        >
-          <BarChart
-            data={turnosPorDiasConTurno}
-            margin={{ top: 5, right: 15, left: -25, bottom: 0 }}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              stroke="#e2e8f0"
-            />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11 }}
-            />
-            <YAxis tick={{ fontSize: 11 }} />
-            <RechartsTooltip
-              cursor={{ fill: "#f1f5f9" }}
-              formatter={(value: any) => [`${value} turnos`, 'Cantidad']}
-              labelFormatter={(label: any) => `${label} ${Number(label) === 1 ? 'día' : 'días'}`}
-              contentStyle={{
-                borderRadius: "8px",
-                border: "none",
-                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-              }}
-            />
-            <Bar
-              dataKey="count"
-              fill="#10b981"
-              radius={[4, 4, 0, 0]}
-              name="Turnos Con Turno"
-            />
-          </BarChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
-
-      {/* Turnos por Profesional por Semana (Full Width) */}
-      <ChartCard
-        title="Turnos por Profesional por Semana"
-        fullWidth
-        isPrinting={isPrinting}
-      >
-        <PrintOptimizedContainer
-          height={180}
-          isPrinting={isPrinting}
-          width={760}
-        >
-          <BarChart
-            data={turnosProfSemana}
-            margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <RechartsTooltip contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
-            <Legend verticalAlign="top" height={24} iconType="circle" wrapperStyle={{ fontSize: "10px" }} />
-            {top5ProfsList.map((prof, idx) => (
-              <Bar
-                key={prof}
-                dataKey={prof}
-                stackId="a"
-                fill={COLORS[idx % COLORS.length]}
-                name={prof}
+            {activeTab !== 'GUARDIA' && (
+              <Legend
+                verticalAlign="top"
+                align="right"
+                height={22}
+                iconType="circle"
+                wrapperStyle={{ fontSize: "11px", paddingBottom: "4px" }}
               />
-            ))}
+            )}
+            {activeTab === 'GUARDIA' ? (
+              <Bar
+                dataKey="count"
+                fill="#3b82f6"
+                radius={[4, 4, 0, 0]}
+                name="Atenciones"
+                onDoubleClick={handleChartDoubleClick}
+                className={setFilters ? "cursor-pointer" : undefined}
+              />
+            ) : (
+              <>
+                <Bar
+                  dataKey="conTurno"
+                  stackId="turnos"
+                  fill="#10b981"
+                  name="Con Turno"
+                  onDoubleClick={handleChartDoubleClick}
+                  className={setFilters ? "cursor-pointer" : undefined}
+                />
+                <Bar
+                  dataKey="sinTurno"
+                  stackId="turnos"
+                  fill="#f59e0b"
+                  radius={[4, 4, 0, 0]}
+                  name="Sin Turno"
+                  onDoubleClick={handleChartDoubleClick}
+                  className={setFilters ? "cursor-pointer" : undefined}
+                />
+              </>
+            )}
           </BarChart>
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* Top 5: Turnos por CAPS (Barras Verticales) */}
-      <ChartCard
-        title="Top 5: Turnos por CAPS"
-        fullWidth
-        isPrinting={isPrinting}
-      >
-        <PrintOptimizedContainer
-          height={180}
-          isPrinting={isPrinting}
-          width={760}
-        >
-          <BarChart
-            data={turnosPorCAPS}
-            margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+      {/* Gráficos Por Urgencia y Por Nivel (Triage) - Solo en el tablero GUARDIA debajo de Atenciones por Día o Semana */}
+      {activeTab === 'GUARDIA' && (
+        <div className="grid grid-cols-2 gap-2">
+          <ChartCard title="Por Urgencia" isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={160} isPrinting={isPrinting} width={360}>
+              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Pie data={guardiaPorUrgencia} innerRadius={20} outerRadius={50} paddingAngle={2} dataKey="count">
+                  {guardiaPorUrgencia.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Legend verticalAlign="bottom" height={22} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+              </PieChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+
+          <ChartCard title="Por Nivel (Triage)" isPrinting={isPrinting}>
+            <PrintOptimizedContainer height={160} isPrinting={isPrinting} width={360}>
+              <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Pie data={guardiaPorTriage} innerRadius={20} outerRadius={50} paddingAngle={2} dataKey="count">
+                  {guardiaPorTriage.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[(index + 4) % COLORS.length]} />
+                  ))}
+                </Pie>
+                <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+                <Legend verticalAlign="bottom" height={22} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+              </PieChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+        </div>
+      )}
+
+      {/* Gráficos Por Horario y Por Minutos de Espera - Solo en el tablero GUARDIA en la parte inferior */}
+      {activeTab === 'GUARDIA' && (
+        <div className="grid grid-cols-2 gap-2">
+          <ChartCard 
+            title="Por Horario" 
+            isPrinting={isPrinting}
+            excelData={guardiaPorHorario.map(d => ({ Horario: d.name, Cantidad: d.count }))}
           >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
-            <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Turnos" />
-          </BarChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
+            <PrintOptimizedContainer height={160} isPrinting={isPrinting} width={360}>
+              <BarChart data={guardiaPorHorario} margin={{ top: 15, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <RechartsTooltip 
+                  cursor={{ fill: '#f1f5f9' }} 
+                  contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} 
+                  formatter={(value: any) => [`${value} guardias`, 'Cantidad']}
+                />
+                <Bar dataKey="count" fill="#6366f1" radius={[3, 3, 0, 0]} name="Guardias">
+                  <LabelList dataKey="count" position="top" fill="#334155" fontSize={10} fontWeight="bold" />
+                </Bar>
+              </BarChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+
+          <ChartCard 
+            title="Por Minutos de Espera" 
+            isPrinting={isPrinting}
+            excelData={guardiaPorMinutosEspera.map(d => ({ 'Minutos de Espera': d.name, Cantidad: d.count }))}
+          >
+            <PrintOptimizedContainer height={160} isPrinting={isPrinting} width={360}>
+              <BarChart data={guardiaPorMinutosEspera} margin={{ top: 15, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <RechartsTooltip 
+                  cursor={{ fill: '#f1f5f9' }} 
+                  contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} 
+                  formatter={(value: any) => [`${value} guardias`, 'Cantidad']}
+                />
+                <Bar dataKey="count" fill="#0ea5e9" radius={[3, 3, 0, 0]} name="Guardias">
+                  <LabelList dataKey="count" position="top" fill="#334155" fontSize={10} fontWeight="bold" />
+                </Bar>
+              </BarChart>
+            </PrintOptimizedContainer>
+          </ChartCard>
+        </div>
+      )}
+
+      {/* Gráfico Por Departamento - Solo en el tablero GUARDIA abajo del gráfico Por Horario y Por Minutos de Espera */}
+      {activeTab === 'GUARDIA' && (
+        <ChartCard 
+          title="Por Departamento" 
+          fullWidth
+          isPrinting={isPrinting}
+          excelData={guardiaPorDpto.map(d => ({ Departamento: d.name, Cantidad: d.count }))}
+        >
+          <PrintOptimizedContainer height={180} isPrinting={isPrinting} width={760}>
+            <BarChart data={guardiaPorDpto} margin={{ top: 15, right: 15, left: -20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis 
+                dataKey="name" 
+                tick={{ fontSize: 10 }} 
+                interval={0}
+                tickFormatter={(v) => typeof v === 'string' && v.length > 12 ? v.slice(0, 11) + '..' : v}
+              />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Atenciones">
+                <LabelList dataKey="count" position="top" fill="#334155" fontSize={10} fontWeight="bold" />
+              </Bar>
+            </BarChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      )}
+
+      {/* Dias de anotados (Full Width) - Oculto solo en el tablero GUARDIA */}
+      {activeTab !== "GUARDIA" && (
+        <ChartCard
+          title="Dias de anotados"
+          fullWidth
+          isPrinting={isPrinting}
+        >
+          <PrintOptimizedContainer
+            height={180}
+            isPrinting={isPrinting}
+            width={760}
+          >
+            <BarChart
+              data={turnosPorDiasConTurno}
+              margin={{ top: 5, right: 15, left: -25, bottom: 0 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#e2e8f0"
+              />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11 }}
+              />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip
+                cursor={{ fill: "#f1f5f9" }}
+                formatter={(value: any) => [`${value} turnos`, 'Cantidad']}
+                labelFormatter={(label: any) => `${label} ${Number(label) === 1 ? 'día' : 'días'}`}
+                contentStyle={{
+                  borderRadius: "8px",
+                  border: "none",
+                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                }}
+              />
+              <Bar
+                dataKey="count"
+                fill="#10b981"
+                radius={[4, 4, 0, 0]}
+                name="Turnos Con Turno"
+              />
+            </BarChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      )}
+
+      {/* Turnos por Profesional por Semana (Full Width) - Oculto solo en el tablero GUARDIA */}
+      {activeTab !== "GUARDIA" && (
+        <ChartCard
+          title="Turnos por Profesional por Semana"
+          fullWidth
+          isPrinting={isPrinting}
+        >
+          <PrintOptimizedContainer
+            height={180}
+            isPrinting={isPrinting}
+            width={760}
+          >
+            <BarChart
+              data={turnosProfSemana}
+              margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+              <Legend verticalAlign="top" height={24} iconType="circle" wrapperStyle={{ fontSize: "10px" }} />
+              {top5ProfsList.map((prof, idx) => (
+                <Bar
+                  key={prof}
+                  dataKey={prof}
+                  stackId="a"
+                  fill={COLORS[idx % COLORS.length]}
+                  name={prof}
+                />
+              ))}
+            </BarChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      )}
+
+      {/* Top 5: Turnos por CAPS (Barras Verticales) - Oculto solo en el tablero GUARDIA */}
+      {activeTab !== "GUARDIA" && (
+        <ChartCard
+          title="Top 5: Turnos por CAPS"
+          fullWidth
+          isPrinting={isPrinting}
+        >
+          <PrintOptimizedContainer
+            height={180}
+            isPrinting={isPrinting}
+            width={760}
+          >
+            <BarChart
+              data={turnosPorCAPS}
+              margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
+              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Turnos" />
+            </BarChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      )}
 
     </div>
   );

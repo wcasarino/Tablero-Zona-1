@@ -16,24 +16,59 @@ export default function KPICards({
     const promedioDiario = diasTotal > 0 ? (totalRecords / diasTotal) : 0;
     
     if (activeTab === 'GUARDIA') {
-      const urgenciaCount = data.filter(d => {
-        const u = String(d.urgencia || '').trim().toLowerCase();
-        return u.includes('urgencia') || u.includes('emergencia');
-      }).length;
+      const diasTotal = new Set(data.filter(d => d.fecha).map(d => d.fecha)).size;
+      const promedioDiario = diasTotal > 0 ? (totalRecords / diasTotal) : 0;
+      const ateXDia = Math.round(promedioDiario);
 
-      const derivacionCount = data.filter(d => {
-        const e = String(d.egreso || '').trim().toLowerCase();
-        return e.includes('derivación') || e.includes('derivacion') || e.includes('derivado');
-      }).length;
+      const triageCounts: Record<string, number> = {
+        'Sin asignar': 0,
+        'RESUCITACION': 0,
+        'EMERGENCIA': 0,
+        'URGENCIA': 0,
+        'URGENCIA MENOR': 0,
+        'SIN URGENCIA': 0,
+        'Obito': 0,
+      };
+
+      data.forEach(g => {
+        const raw = String(g.nivel || '').trim();
+        const lower = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (!raw || lower.includes('sin asignar') || lower === 'sin nivel' || lower === 'desconocido' || lower === '-') {
+          triageCounts['Sin asignar']++;
+        } else if (lower.includes('resucita')) {
+          triageCounts['RESUCITACION']++;
+        } else if (lower.includes('emergencia')) {
+          triageCounts['EMERGENCIA']++;
+        } else if (lower.includes('urgencia menor') || lower.includes('menor')) {
+          triageCounts['URGENCIA MENOR']++;
+        } else if (lower.includes('sin urgencia') || lower.includes('no urgente')) {
+          triageCounts['SIN URGENCIA']++;
+        } else if (lower === 'urgencia' || lower.includes('urgencia')) {
+          triageCounts['URGENCIA']++;
+        } else if (lower.includes('obito')) {
+          triageCounts['Obito']++;
+        } else {
+          triageCounts['Sin asignar']++;
+        }
+      });
+
+      const triageList = [
+        { label: 'Sin asignar', count: triageCounts['Sin asignar'], dotColor: 'bg-slate-400' },
+        { label: 'RESUCITACION', count: triageCounts['RESUCITACION'], dotColor: 'bg-rose-600' },
+        { label: 'EMERGENCIA', count: triageCounts['EMERGENCIA'], dotColor: 'bg-amber-500' },
+        { label: 'URGENCIA', count: triageCounts['URGENCIA'], dotColor: 'bg-yellow-500' },
+        { label: 'URGENCIA MENOR', count: triageCounts['URGENCIA MENOR'], dotColor: 'bg-emerald-500' },
+        { label: 'SIN URGENCIA', count: triageCounts['SIN URGENCIA'], dotColor: 'bg-blue-500' },
+        { label: 'Obito', count: triageCounts['Obito'], dotColor: 'bg-slate-800' },
+      ].map(item => ({
+        ...item,
+        pct: totalRecords > 0 ? ((item.count / totalRecords) * 100).toFixed(1) + '%' : '0.0%',
+      }));
 
       return {
-        guardiaKpis: [
-          { label: 'TOTAL GUARDIAS', value: totalRecords, border: 'border-blue-500 font-extrabold' },
-          { label: 'ATE x DÍA', value: promedioDiario.toFixed(1), border: 'border-teal-500 font-extrabold' },
-          { label: 'TOTAL DÍAS', value: diasTotal, border: 'border-purple-500 font-extrabold' },
-          { label: 'URGENCIAS', value: urgenciaCount, border: 'border-rose-500 font-extrabold' },
-          { label: 'DERIVACIONES', value: derivacionCount, border: 'border-amber-500 font-extrabold' },
-        ],
+        totalGuardias: totalRecords.toLocaleString('es-AR'),
+        ateXDia: ateXDia.toLocaleString('es-AR'),
+        triageList,
       };
     }
 
@@ -111,13 +146,65 @@ export default function KPICards({
 
   if (activeTab === 'GUARDIA') {
     return (
-      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-        {metrics.guardiaKpis?.map((kpi, idx) => (
-          <div key={idx} className={cn("bg-white border-l-4 p-3 shadow-xs rounded flex flex-col justify-center min-h-[78px]", kpi.border)}>
-            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">{kpi.label}</div>
-            <div className="text-2xl font-black text-slate-900 mt-1">{kpi.value}</div>
+      <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 items-stretch">
+        {/* 1. TOTAL GUARDIAS */}
+        <div className="bg-white border-l-4 border-blue-500 p-3 shadow-xs rounded flex flex-col justify-center min-h-[85px] lg:col-span-2">
+          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">TOTAL GUARDIAS</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{metrics.totalGuardias}</div>
+        </div>
+
+        {/* 2. ATE x DÍA (entero más cercano) */}
+        <div className="bg-white border-l-4 border-teal-500 p-3 shadow-xs rounded flex flex-col justify-center min-h-[85px] lg:col-span-2">
+          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">ATE x DÍA</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">{metrics.ateXDia}</div>
+        </div>
+
+        {/* 3. Nivel de Triage: */}
+        <div className="bg-white border-l-4 border-indigo-500 px-3 py-2 shadow-xs rounded flex flex-col justify-between min-h-[85px] sm:col-span-2 lg:col-span-8">
+          <div className="flex justify-between items-center mb-1 border-b border-slate-100 pb-1">
+            <span className="text-[10px] text-slate-700 font-bold uppercase tracking-wide flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block"></span>
+              Nivel de Triage:
+            </span>
+            <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
+              Cantidad y % s/ total
+            </span>
           </div>
-        ))}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0.5">
+            {/* Columna Izquierda: Sin asignar, RESUCITACION, EMERGENCIA, URGENCIA */}
+            <div className="flex flex-col divide-y divide-slate-50">
+              {metrics.triageList?.slice(0, 4).map((item: any) => (
+                <div key={item.label} className="flex justify-between items-center py-0.5 text-[11px]">
+                  <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                    <span className={cn("w-2 h-2 rounded-full shrink-0", item.dotColor)} />
+                    <span className="truncate max-w-[140px]">{item.label}</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span className="font-bold text-slate-800">{item.count.toLocaleString('es-AR')}</span>
+                    <span className="text-[10px] text-slate-500 font-semibold min-w-[42px] text-right">({item.pct})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Columna Derecha: URGENCIA MENOR, SIN URGENCIA, Obito */}
+            <div className="flex flex-col divide-y divide-slate-50">
+              {metrics.triageList?.slice(4).map((item: any) => (
+                <div key={item.label} className="flex justify-between items-center py-0.5 text-[11px]">
+                  <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                    <span className={cn("w-2 h-2 rounded-full shrink-0", item.dotColor)} />
+                    <span className="truncate max-w-[140px]">{item.label}</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    <span className="font-bold text-slate-800">{item.count.toLocaleString('es-AR')}</span>
+                    <span className="text-[10px] text-slate-500 font-semibold min-w-[42px] text-right">({item.pct})</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

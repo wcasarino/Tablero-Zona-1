@@ -211,7 +211,61 @@ export default function LeftCharts({
 
   const turnosPorProfesional = useMemo(() => {
     if (activeTab !== 'AMBULATORIO' || !data) return [];
-    return countByProperty(data, 'profesional').slice(0, 7);
+
+    const isConTurno = (tipo?: string) => {
+      const t = String(tipo || '').trim().toLowerCase();
+      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return true;
+      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return false;
+      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return true;
+      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return false;
+      return t.includes('con turno') || (!t.includes('sin turno') && (t.includes('program') || t.includes('sobre')));
+    };
+
+    const isSinTurno = (tipo?: string) => {
+      const t = String(tipo || '').trim().toLowerCase();
+      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return true;
+      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return false;
+      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return true;
+      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return false;
+      return t.includes('sin turno') || t.includes('inmediat') || t.includes('espont');
+    };
+
+    const profMap = new Map<string, { name: string; conTurno: number; sinTurno: number; count: number }>();
+
+    data.forEach((d) => {
+      const prof = String(d.profesional || '').trim();
+      if (!prof || prof.toLowerCase() === 'desconocido' || prof === '-') return;
+
+      if (!profMap.has(prof)) {
+        profMap.set(prof, { name: prof, conTurno: 0, sinTurno: 0, count: 0 });
+      }
+      const entry = profMap.get(prof)!;
+      const atenciones = Number(d.atenciones) || 1;
+
+      if (d.conTurno !== undefined || d.sinTurno !== undefined) {
+        const ct = Number(d.conTurno) || 0;
+        const st = Number(d.sinTurno) || 0;
+        entry.conTurno += ct;
+        entry.sinTurno += st;
+        if (ct === 0 && st === 0 && atenciones > 0) {
+          entry.sinTurno += atenciones;
+        }
+        entry.count += (ct + st > 0 ? (ct + st) : atenciones);
+      } else if (isConTurno(d.tipo)) {
+        entry.conTurno += atenciones;
+        entry.count += atenciones;
+      } else if (isSinTurno(d.tipo)) {
+        entry.sinTurno += atenciones;
+        entry.count += atenciones;
+      } else {
+        entry.sinTurno += atenciones;
+        entry.count += atenciones;
+      }
+    });
+
+    return Array.from(profMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
   }, [data, activeTab]);
   
   const ambPorTipoAtencion = useMemo(() => {
@@ -499,25 +553,47 @@ export default function LeftCharts({
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* Top 7: Turnos por Profesional */}
-      <ChartCard title="Top 7: Turnos por Profesional" isPrinting={isPrinting}>
-        <PrintOptimizedContainer height={200} isPrinting={isPrinting} width={370}>
+      {/* Top 5: Turnos por Profesional */}
+      <ChartCard title="Top 5: Turnos por Profesional" isPrinting={isPrinting}>
+        <PrintOptimizedContainer height={180} isPrinting={isPrinting} width={370}>
           <BarChart
             data={turnosPorProfesional}
-            layout="vertical"
-            margin={{ top: 5, right: 10, left: 10, bottom: -5 }}
+            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
           >
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-            <XAxis type="number" tick={{ fontSize: 10 }} />
-            <YAxis 
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+            <XAxis 
               dataKey="name" 
-              type="category" 
-              width={110} 
               tick={{ fontSize: 9 }} 
-              tickFormatter={(val) => typeof val === 'string' && val.length > 20 ? val.slice(0, 18) + '...' : val} 
+              interval={0}
+              tickFormatter={(val) => typeof val === 'string' && val.length > 13 ? val.slice(0, 11) + '..' : val}
             />
-            <RechartsTooltip cursor={{ fill: "#f1f5f9" }} contentStyle={{ borderRadius: "4px", border: "none", padding: "4px" }} />
-            <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Turnos" />
+            <YAxis tick={{ fontSize: 10 }} />
+            <RechartsTooltip 
+              cursor={{ fill: "#f1f5f9" }} 
+              contentStyle={{ borderRadius: "6px", border: "none", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", fontSize: "10px", padding: "6px" }}
+              formatter={(value: any, name: any) => [`${value} turnos`, name]}
+              labelFormatter={(label: any) => `Profesional: ${label}`}
+            />
+            <Legend 
+              verticalAlign="top" 
+              align="right" 
+              height={22} 
+              iconType="circle" 
+              wrapperStyle={{ fontSize: "10px", paddingBottom: "4px" }} 
+            />
+            <Bar
+              dataKey="conTurno"
+              stackId="turnos"
+              fill="#10b981"
+              name="Con Turno"
+            />
+            <Bar
+              dataKey="sinTurno"
+              stackId="turnos"
+              fill="#f59e0b"
+              radius={[3, 3, 0, 0]}
+              name="Sin Turno"
+            />
           </BarChart>
         </PrintOptimizedContainer>
       </ChartCard>

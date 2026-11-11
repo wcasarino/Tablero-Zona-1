@@ -94,6 +94,7 @@ export default function App() {
     triage: [],
     diaSemana: [],
     canal: [],
+    agenda: [],
     dateFrom: null,
     dateTo: null,
     conCargaHoraria: false,
@@ -112,6 +113,7 @@ export default function App() {
     estado: [],
     diaSemana: [],
     canal: [],
+    agenda: [],
     dateFrom: null,
     dateTo: null,
     conCargaHoraria: false,
@@ -130,6 +132,7 @@ export default function App() {
     estado: [],
     diaSemana: [],
     canal: [],
+    agenda: [],
     dateFrom: null,
     dateTo: null,
     conCargaHoraria: false,
@@ -185,7 +188,7 @@ export default function App() {
           localStorage.setItem('remixed_guardias', JSON.stringify(updatedData));
         }
         
-        setFilters({ dpto: [], caps: [], especialidad: [], profesional: [], tipo: [], anotador: [], urgencia: [], egreso: [], triage: [], estado: [], diaSemana: [], canal: [], dateFrom: null, dateTo: null, conCargaHoraria: false });
+        setFilters({ dpto: [], caps: [], especialidad: [], profesional: [], tipo: [], anotador: [], urgencia: [], egreso: [], triage: [], estado: [], diaSemana: [], canal: [], agenda: [], dateFrom: null, dateTo: null, conCargaHoraria: false });
       } else {
         if (activeTab === 'AMBULATORIO') {
           await clearAllTurnos(idsToClean);
@@ -202,7 +205,7 @@ export default function App() {
           setGuardias(prev => prev.filter(g => !idsToClean.includes(g.id)));
         }
         
-        setFilters({ dpto: [], caps: [], especialidad: [], profesional: [], tipo: [], anotador: [], urgencia: [], egreso: [], triage: [], estado: [], diaSemana: [], canal: [], dateFrom: null, dateTo: null, conCargaHoraria: false });
+        setFilters({ dpto: [], caps: [], especialidad: [], profesional: [], tipo: [], anotador: [], urgencia: [], egreso: [], triage: [], estado: [], diaSemana: [], canal: [], agenda: [], dateFrom: null, dateTo: null, conCargaHoraria: false });
       }
     } catch (err) {
       console.error("Error al depurar registros:", err);
@@ -318,7 +321,7 @@ export default function App() {
         'Atenciones', 'Fem', 'Masc', 'F-0-18 años', 'F-18-29 años', 'F-30-49 años', 'F-50-64 años', 'F-65+ años',
         'M-0-18 años', 'M-18-29 años', 'M-30-49 años', 'M-50-64 años', 'M-65+ años',
         'M', 'T', 'N', 'Sin Turno', 'Con Turno', 'CAPS', 'BOT', 'CALL',
-        'En el Día', 'El día anterior', 'En la Semana', 'Resto'
+        'En el Día', 'El día anterior', 'En la Semana', 'Resto', 'Agenda'
       ];
 
       const norm = (s: any) =>
@@ -331,7 +334,7 @@ export default function App() {
       const actualHeaders = headers.map(h => String(h || '').trim());
       const missingTurnos: string[] = [];
 
-      for (let i = 0; i < 31; i++) {
+      for (let i = 0; i < expectedTurnosHeaders.length; i++) {
         const actual = actualHeaders[i] || '';
         const expected = expectedTurnosHeaders[i];
         if (norm(actual) !== norm(expected)) {
@@ -339,10 +342,10 @@ export default function App() {
         }
       }
 
-      if (headers.length < 31 || missingTurnos.length > 0) {
+      if (headers.length < 32 || missingTurnos.length > 0) {
         errors.push(...missingTurnos);
-        if (headers.length < 31) {
-          errors.push(`La hoja "Turnos" solo contiene ${headers.length} columnas con datos (deben ser 31 de la A a la AE).`);
+        if (headers.length < 32) {
+          errors.push(`La hoja "Turnos" solo contiene ${headers.length} columnas con datos (deben ser 32 de la A a la AF).`);
         }
       } else {
         const parseFecha = (fechaRaw: any): string => {
@@ -417,6 +420,7 @@ export default function App() {
             const diaAnterior = Number(row[28]) || 0;
             const enLaSemana = Number(row[29]) || 0;
             const resto = Number(row[30]) || 0;
+            const agenda = String(row[31] ?? '').trim();
 
             const dniPro = String(row[5] ?? '-').trim();
             const fechaStr = parseFecha(row[4]);
@@ -454,6 +458,7 @@ export default function App() {
               diaAnterior,
               enLaSemana,
               resto,
+              agenda,
               // Compatibility fields
               tipo: conTurno > 0 ? 'Con Turno' : 'Sin Turno',
               anotador: canalBot > 0 ? 'BOT' : (canalCall > 0 ? 'CALL' : 'CAPS'),
@@ -875,15 +880,9 @@ export default function App() {
           }
         }
         
-        if (filters.conCargaHoraria) {
-          if (!turno.dniPro || turno.dniPro === '-') return false;
-          const normalizedTurnoDni = String(turno.dniPro).trim().toLowerCase();
-          const pro = profesionales.find(p => {
-            if (!p.dniPro) return false;
-            const normalizedProDni = String(p.dniPro).trim().toLowerCase();
-            return normalizedProDni === normalizedTurnoDni;
-          });
-          if (!pro) return false;
+        if (filters.agenda && filters.agenda.length > 0) {
+          const itemAgenda = String(turno.agenda || '').trim();
+          if (!filters.agenda.includes(itemAgenda)) return false;
         }
       }
 
@@ -1144,7 +1143,7 @@ export default function App() {
               </p>
               
               <div className="mb-4">
-                <h4 className="text-xs font-bold text-slate-700 mb-1 bg-slate-100 p-1 rounded font-sans uppercase">1. Hoja "Turnos" (31 Columnas de la A a la AE)</h4>
+                <h4 className="text-xs font-bold text-slate-700 mb-1 bg-slate-100 p-1 rounded font-sans uppercase">1. Hoja "Turnos" (32 Columnas de la A a la AF)</h4>
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[10px] font-mono text-slate-600 grid grid-cols-3 gap-x-2 gap-y-1 shadow-inner">
                   <div>A: <span className="font-semibold text-slate-800">Dpto</span></div>
                   <div>L: <span className="font-semibold text-slate-800">F-30-49 años</span></div>
@@ -1175,7 +1174,7 @@ export default function App() {
                   <div>AE: <span className="font-semibold text-slate-800">Resto</span></div>
                   <div>J: <span className="font-semibold text-slate-800">F-0-18 años</span></div>
                   <div>U: <span className="font-semibold text-slate-800">T</span></div>
-                  <div></div>
+                  <div>AF: <span className="font-semibold text-slate-800">Agenda</span></div>
                   <div>K: <span className="font-semibold text-slate-800">F-18-29 años</span></div>
                   <div>V: <span className="font-semibold text-slate-800">N</span></div>
                   <div></div>

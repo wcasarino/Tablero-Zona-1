@@ -171,6 +171,7 @@ export default function FiltersPanel({
           const itemDia = getDiaSemanaName(t.diaSemana, t.fecha);
           if (!filters.diaSemana.includes(itemDia)) return false;
         }
+        if (field !== 'agenda' && filters.agenda && filters.agenda.length > 0 && !filters.agenda.includes(t.agenda)) return false;
         return true;
       }).map(t => String(t[dataField] || ''))))
       .filter(Boolean)
@@ -187,6 +188,7 @@ export default function FiltersPanel({
         if (filters.profesional.length > 0 && !filters.profesional.includes(t.profesional)) return;
         if (filters.tipo && filters.tipo.length > 0 && !filters.tipo.includes(t.tipo)) return;
         if (filters.anotador && filters.anotador.length > 0 && !filters.anotador.includes(t.anotador)) return;
+        if (filters.agenda && filters.agenda.length > 0 && !filters.agenda.includes(t.agenda)) return;
         const dia = getDiaSemanaName(t.diaSemana, t.fecha);
         if (dia) set.add(dia);
       });
@@ -206,6 +208,12 @@ export default function FiltersPanel({
       return ['CAPS', 'BOT', 'CALL'];
     })();
 
+    const availableAgendas = (() => {
+      const fromData = getAvailable('agenda', 'agenda');
+      if (fromData.length > 0) return fromData;
+      return ['SI', 'NO'];
+    })();
+
     return {
       dptos: getAvailable('dpto', 'dpto'),
       caps: getAvailable('caps', 'caps'),
@@ -214,6 +222,7 @@ export default function FiltersPanel({
       tipos: availableTipos,
       anotadores: availableAnotadores,
       diasSemana: getAvailableDiasSemana(),
+      agendas: availableAgendas,
       canales: [] as string[],
       urgencias: [] as string[],
       egresos: [] as string[],
@@ -241,6 +250,7 @@ export default function FiltersPanel({
       tipo: [],
       anotador: [],
       diaSemana: [],
+      agenda: [],
       canal: [],
       urgencia: [],
       egreso: [],
@@ -369,22 +379,8 @@ export default function FiltersPanel({
           <FilterSelect title="Especialidad" field="especialidad" options={options.especialidades} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Profesional" field="profesional" options={options.profesionales} filters={filters} setFilters={setFilters} onToggle={handleToggle} showSearch={true} />
           <FilterSelect title="Día Semana" field="diaSemana" options={options.diasSemana} filters={filters} setFilters={setFilters} onToggle={handleToggle} />
+          <FilterSelect title="AGENDA" field="agenda" options={options.agendas} filters={filters} setFilters={setFilters} onToggle={handleToggle} />
         </>
-      )}
-
-      {activeTab === 'AMBULATORIO' && (
-        <div className="flex items-center gap-1.5 self-center mt-6 pr-2 border-l border-slate-200 pl-4">
-          <input 
-            type="checkbox" 
-            id="conCargaHoraria" 
-            checked={filters.conCargaHoraria}
-            onChange={(e) => setFilters(p => ({ ...p, conCargaHoraria: e.target.checked }))}
-            className="w-3.5 h-3.5 shrink-0 accent-blue-600"
-          />
-          <label htmlFor="conCargaHoraria" className="text-[11px] font-semibold text-slate-700 whitespace-nowrap cursor-pointer select-none">
-            Con Carga Horaria
-          </label>
-        </div>
       )}
 
       <div className="flex-1" />

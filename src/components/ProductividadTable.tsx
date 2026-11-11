@@ -52,6 +52,7 @@ export default function ProductividadTable({
         triageObito: number;
         fechas: Set<string>;
         fechasHabiles: Set<string>;
+        hasAgendaSi: boolean;
       }
     >();
 
@@ -80,12 +81,18 @@ export default function ProductividadTable({
           triageObito: 0,
           fechas: new Set<string>(),
           fechasHabiles: new Set<string>(),
+          hasAgendaSi: false,
         });
       }
 
       const p = profMap.get(key)!;
       const atenciones = Number(t.atenciones) || 1;
       p.tot += atenciones;
+
+      const agendaNorm = String(t.agenda || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (agendaNorm === 'SI') {
+        p.hasAgendaSi = true;
+      }
 
       if (activeTab === 'GUARDIA') {
         const u = String(t.urgencia || '').trim().toLowerCase();
@@ -188,6 +195,7 @@ export default function ProductividadTable({
           resolvedName.length > 30 ? resolvedName.substring(0, 30) + '...' : resolvedName,
         cargaH: proDb ? proDb.cargaH : '',
         turEsp: proDb ? proDb.turEsp : '',
+        agenda: p.hasAgendaSi ? 'SI' : 'NO',
         prom: dias > 0 ? (p.tot / dias).toFixed(1) : '0.0',
         prohab: isGuardia
           ? (dias > 0 ? String(Math.round(p.tot / dias)) : '0')
@@ -367,6 +375,7 @@ export default function ProductividadTable({
       Profesional: p.originalProfesional,
       CargaH: p.cargaH || '',
       TurEsp: p.turEsp || '',
+      Agenda: p.agenda,
       ATEDIA: p.prohab || '0.0',
       Tot: p.tot || 0,
       CAPS: `${p.canalCaps} (${p.pctCaps})`,
@@ -601,6 +610,16 @@ export default function ProductividadTable({
                   </th>
                   <th
                     rowSpan={2}
+                    className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-center w-20 align-bottom"
+                    onClick={() => toggleSort('agenda')}
+                  >
+                    <div className="flex items-center justify-center">
+                      Agenda
+                      {getSortIcon('agenda')}
+                    </div>
+                  </th>
+                  <th
+                    rowSpan={2}
                     className="py-2 px-3 border-b border-slate-200 cursor-pointer hover:bg-slate-200 select-none group transition-colors text-right w-20 align-bottom"
                     onClick={() => toggleSort('prohab')}
                   >
@@ -719,6 +738,16 @@ export default function ProductividadTable({
                     <td className="py-1.5 px-3 text-slate-600 text-center font-mono truncate max-w-[120px]">
                       {p.turEsp || '-'}
                     </td>
+                    <td className="py-1.5 px-3 text-center font-mono">
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded text-[10px] font-bold inline-block min-w-[28px]",
+                        p.agenda === 'SI' 
+                          ? "bg-emerald-100 text-emerald-800" 
+                          : "bg-slate-100 text-slate-500"
+                      )}>
+                        {p.agenda}
+                      </span>
+                    </td>
                   </>
                 )}
                 <td className="py-1.5 px-3 text-right font-mono">
@@ -789,7 +818,7 @@ export default function ProductividadTable({
             ))}
             {productividad.length === 0 && (
               <tr>
-                <td colSpan={11} className="py-6 text-center text-slate-400">
+                <td colSpan={isGuardia ? 11 : 12} className="py-6 text-center text-slate-400">
                   No hay datos para mostrar
                 </td>
               </tr>
@@ -801,6 +830,7 @@ export default function ProductividadTable({
                 <td className="py-2 px-3 font-bold">TOTAL ({totals.count} Pro)</td>
                 {!isGuardia && (
                   <>
+                    <td className="py-2 px-3 text-center">-</td>
                     <td className="py-2 px-3 text-center">-</td>
                     <td className="py-2 px-3 text-center">-</td>
                   </>

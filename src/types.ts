@@ -43,6 +43,7 @@ export interface Turno {
   dias?: number;
   anotador?: string;
   diaSemana?: string;
+  agenda?: string;
 }
 
 export interface Profesional {
@@ -124,7 +125,8 @@ export interface Filters {
   egreso?: string[];
   triage?: string[];
   estado?: string[];
+  agenda?: string[];
   dateFrom: string | null;
   dateTo: string | null;
-  conCargaHoraria: boolean;
+  conCargaHoraria?: boolean;
 }

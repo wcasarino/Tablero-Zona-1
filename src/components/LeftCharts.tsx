@@ -209,63 +209,44 @@ export default function LeftCharts({
     return countByProperty(data, 'sexo');
   }, [data]);
 
-  const turnosPorProfesional = useMemo(() => {
-    if (activeTab !== 'AMBULATORIO' || !data) return [];
+  const ambConAgendas = useMemo(() => {
+    if (activeTab !== 'AMBULATORIO' || !data || data.length === 0) return [];
 
-    const isConTurno = (tipo?: string) => {
-      const t = String(tipo || '').trim().toLowerCase();
-      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return true;
-      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return false;
-      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return true;
-      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return false;
-      return t.includes('con turno') || (!t.includes('sin turno') && (t.includes('program') || t.includes('sobre')));
+    const isSi = (val?: string) => {
+      const v = String(val || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return v === 'SI';
     };
 
-    const isSinTurno = (tipo?: string) => {
-      const t = String(tipo || '').trim().toLowerCase();
-      if (t === 'sin turno' || t === 'sin_turno' || t === 'sin-turno') return true;
-      if (t === 'con turno' || t === 'con_turno' || t === 'con-turno') return false;
-      if (t === 'atención inmediata' || t === 'atencion inmediata' || t === 'inmediata' || t === 'espontánea' || t === 'espontanea') return true;
-      if (t === 'programado' || t === 'sobreturno' || t === 'sobre turno') return false;
-      return t.includes('sin turno') || t.includes('inmediat') || t.includes('espont');
-    };
-
-    const profMap = new Map<string, { name: string; conTurno: number; sinTurno: number; count: number }>();
+    const profAgendaMap = new Map<string, boolean>();
 
     data.forEach((d) => {
-      const prof = String(d.profesional || '').trim();
-      if (!prof || prof.toLowerCase() === 'desconocido' || prof === '-') return;
+      const name = String(d.profesional || 'Desconocido').trim();
+      const dni = String(d.dniPro || '-').trim();
+      const key = `${dni}_${name}`;
 
-      if (!profMap.has(prof)) {
-        profMap.set(prof, { name: prof, conTurno: 0, sinTurno: 0, count: 0 });
+      if (!profAgendaMap.has(key)) {
+        profAgendaMap.set(key, false);
       }
-      const entry = profMap.get(prof)!;
-      const atenciones = Number(d.atenciones) || 1;
-
-      if (d.conTurno !== undefined || d.sinTurno !== undefined) {
-        const ct = Number(d.conTurno) || 0;
-        const st = Number(d.sinTurno) || 0;
-        entry.conTurno += ct;
-        entry.sinTurno += st;
-        if (ct === 0 && st === 0 && atenciones > 0) {
-          entry.sinTurno += atenciones;
-        }
-        entry.count += (ct + st > 0 ? (ct + st) : atenciones);
-      } else if (isConTurno(d.tipo)) {
-        entry.conTurno += atenciones;
-        entry.count += atenciones;
-      } else if (isSinTurno(d.tipo)) {
-        entry.sinTurno += atenciones;
-        entry.count += atenciones;
-      } else {
-        entry.sinTurno += atenciones;
-        entry.count += atenciones;
+      if (isSi(d.agenda)) {
+        profAgendaMap.set(key, true);
       }
     });
 
-    return Array.from(profMap.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+    let siCount = 0;
+    let noCount = 0;
+
+    profAgendaMap.forEach((hasSi) => {
+      if (hasSi) {
+        siCount++;
+      } else {
+        noCount++;
+      }
+    });
+
+    return [
+      { name: 'SI', count: siCount },
+      { name: 'NO', count: noCount },
+    ].filter(x => x.count > 0);
   }, [data, activeTab]);
   
   const ambPorTipoAtencion = useMemo(() => {
@@ -535,68 +516,45 @@ export default function LeftCharts({
         </PrintOptimizedContainer>
       </ChartCard>
 
-      {/* 2. Distribución por Sexo */}
-      <ChartCard title="Por Sexo" isPrinting={isPrinting}>
-        <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={370}>
-          <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-            <Pie data={ambSexos} innerRadius={20} outerRadius={45} paddingAngle={4} dataKey="count">
-              {ambSexos.map((entry, index) => (
-                <Cell 
-                  key={`cell-${index}`} 
-                  fill={entry.name === 'F' ? '#ec4899' : '#3b82f6'} 
-                />
-              ))}
-            </Pie>
-            <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
-            <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} formatter={(val) => val === 'F' ? 'Fem' : 'Masc'} />
-          </PieChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
+      {/* 2. Por Sexo y CON AGENDAS (Lado a Lado) */}
+      <div className="grid grid-cols-2 gap-2">
+        <ChartCard title="Por Sexo" isPrinting={isPrinting}>
+          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <Pie data={ambSexos} innerRadius={18} outerRadius={38} paddingAngle={4} dataKey="count">
+                {ambSexos.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={entry.name === 'F' ? '#ec4899' : '#3b82f6'} 
+                  />
+                ))}
+              </Pie>
+              <RechartsTooltip contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }} />
+              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} formatter={(val) => val === 'F' ? 'Fem' : 'Masc'} />
+            </PieChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
 
-      {/* Top 5: Turnos por Profesional */}
-      <ChartCard title="Top 5: Turnos por Profesional" isPrinting={isPrinting}>
-        <PrintOptimizedContainer height={180} isPrinting={isPrinting} width={370}>
-          <BarChart
-            data={turnosPorProfesional}
-            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-            <XAxis 
-              dataKey="name" 
-              tick={{ fontSize: 9 }} 
-              interval={0}
-              tickFormatter={(val) => typeof val === 'string' && val.length > 13 ? val.slice(0, 11) + '..' : val}
-            />
-            <YAxis tick={{ fontSize: 10 }} />
-            <RechartsTooltip 
-              cursor={{ fill: "#f1f5f9" }} 
-              contentStyle={{ borderRadius: "6px", border: "none", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", fontSize: "10px", padding: "6px" }}
-              formatter={(value: any, name: any) => [`${value} turnos`, name]}
-              labelFormatter={(label: any) => `Profesional: ${label}`}
-            />
-            <Legend 
-              verticalAlign="top" 
-              align="right" 
-              height={22} 
-              iconType="circle" 
-              wrapperStyle={{ fontSize: "10px", paddingBottom: "4px" }} 
-            />
-            <Bar
-              dataKey="conTurno"
-              stackId="turnos"
-              fill="#10b981"
-              name="Con Turno"
-            />
-            <Bar
-              dataKey="sinTurno"
-              stackId="turnos"
-              fill="#f59e0b"
-              radius={[3, 3, 0, 0]}
-              name="Sin Turno"
-            />
-          </BarChart>
-        </PrintOptimizedContainer>
-      </ChartCard>
+        <ChartCard title="CON AGENDAS" isPrinting={isPrinting}>
+          <PrintOptimizedContainer height={140} isPrinting={isPrinting} width={180}>
+            <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <Pie data={ambConAgendas} innerRadius={18} outerRadius={38} paddingAngle={4} dataKey="count">
+                {ambConAgendas.map((entry) => (
+                  <Cell 
+                    key={`cell-${entry.name}`} 
+                    fill={entry.name === 'SI' ? '#10b981' : '#f59e0b'} 
+                  />
+                ))}
+              </Pie>
+              <RechartsTooltip 
+                contentStyle={{ borderRadius: '4px', border: 'none', padding: '4px', fontSize: '10px' }}
+                formatter={(value: any, name: any) => [`${value} profesionales`, `Agenda: ${name}`]}
+              />
+              <Legend verticalAlign="bottom" height={20} iconType="circle" wrapperStyle={{ fontSize: "9px" }} />
+            </PieChart>
+          </PrintOptimizedContainer>
+        </ChartCard>
+      </div>
 
       {/* Top 5: Origen del Paciente (Dpto) (si existe en los datos) */}
       {ambTopPacDpto.length > 0 && (
